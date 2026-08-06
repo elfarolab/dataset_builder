@@ -1,0 +1,35 @@
+# config.yaml
+
+app:
+  name: "Dataset Builder"
+  subtitle: "Review and refine AI training data from your documents"
+  persona: "climate change expert AI assistant"
+  audience: "farmers, fishermen, coastal communities, or general public"
+
+server:
+  host: "0.0.0.0"
+  port: 8501
+  reload: true
+
+llama_server:
+  url: "http://REPLACE_ME_LAN_IP"
+  timeout: 800
+  max_tokens: 8000
+  temperature: 0.6
+  top_p: 0.95
+  name: "llm"
+
+paths:
+  pdf_dir: "pdf"
+  web_dir: "web"
+  result_dir: "result"
+  state_file: ".review_state.json"
+
+processing:
+  chunk_size: 1500
+  qa_per_chunk: 5
+  batch_delay: 3.0  # seconds between chunks
+  image_qa_per_image: 3
+  enable_multimodal: true
+  debug_print: false
+

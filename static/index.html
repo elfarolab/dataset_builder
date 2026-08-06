@@ -1,0 +1,2049 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title id="appTitle">Dataset Builder - Review Interface</title>
+    <style>
+        :root {
+            --primary: #4fa98d;
+            --primary-dark: #3d8874;
+            --primary-light: #8ad4bd;
+            --success: #5b9e5b;
+            --success-strong: #3f7a4a;
+            --danger: #c96354;
+            --danger-strong: #a84a3d;
+            --warning: #d1a13f;
+            --info: #6b8cce;
+            --gray-50: #181c1a;
+            --gray-100: #21261f;
+            --gray-200: #333a34;
+            --gray-300: #454e46;
+            --gray-600: #9aa79c;
+            --gray-700: #c2ccc0;
+            --gray-800: #e9e6dd;
+            --shadow: 0 1px 3px rgba(0,0,0,0.35), 0 1px 2px rgba(0,0,0,0.25);
+            --radius: 8px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--gray-50);
+            color: var(--gray-800);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Header */
+        header {
+            background: linear-gradient(135deg, #2d6e5c, #223a4d);
+            color: #f2f0e8;
+            padding: 10px 0;  /* Reduced from 24px */
+            margin-bottom: 16px;  /* Reduced from 24px */
+            box-shadow: var(--shadow);
+            border-bottom: 1px solid #1a2e26;
+        }
+        
+        header .container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;  /* Reduced from 16px */
+        }
+        
+        header h1 {
+            font-size: 1.25rem;  /* Reduced from 1.75rem */
+            font-weight: 700;
+            line-height: 1.2;  /* Tighter line height */
+        }
+        
+        header .subtitle {
+            font-size: 0.75rem;  /* Reduced from 0.9rem */
+            opacity: 0.85;
+            margin-top: 2px;  /* Reduced from 4px */
+        }
+        
+        /* Status Bar - COMPACT */
+        .status-bar {
+            display: flex;
+            gap: 8px;  /* Reduced from 12px */
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;  /* Reduced from 6px */
+            padding: 3px 8px;  /* Reduced from 6px 12px */
+            background: rgba(255,255,255,0.15);
+            border-radius: 12px;  /* Reduced from 20px */
+            font-size: 0.75rem;  /* Reduced from 0.85rem */
+        }
+        
+        .status-dot {
+            width: 6px;  /* Reduced from 8px */
+            height: 6px;  /* Reduced from 8px */
+            border-radius: 50%;
+            background: var(--success);
+        }
+        
+        .status-dot.disconnected { background: var(--danger); }
+        .status-dot.warning { background: var(--warning); }
+
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: var(--gray-100);
+            padding: 16px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            text-align: center;
+        }
+
+        .stat-card .value {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .stat-card .label {
+            font-size: 0.8rem;
+            color: var(--gray-600);
+            margin-top: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Action Bar */
+        .action-bar {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: var(--radius);
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: var(--primary-dark);
+            color: #f2f0e8;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: #336e5e;
+        }
+
+        .btn-success {
+            background: var(--success-strong);
+            color: #f2f0e8;
+        }
+
+        .btn-success:hover:not(:disabled) {
+            background: #345f3d;
+        }
+
+        .btn-danger {
+            background: var(--danger-strong);
+            color: #f2f0e8;
+        }
+
+        .btn-secondary {
+            background: var(--gray-200);
+            color: var(--gray-700);
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: var(--gray-300);
+        }
+
+        .btn-info {
+            background: #4a6a9e;
+            color: #f2f0e8;
+        }
+
+        .btn-info:hover:not(:disabled) {
+            background: #3d5a88;
+        }
+
+        /* Progress Bar */
+        .progress-container {
+            background: var(--gray-100);
+            padding: 16px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            margin-bottom: 24px;
+            display: none;
+        }
+
+        .progress-container.active { display: block; }
+
+        .progress-bar {
+            height: 8px;
+            background: var(--gray-200);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), #7c3aed);
+            transition: width 0.3s;
+            border-radius: 4px;
+        }
+
+        .progress-text {
+            font-size: 0.85rem;
+            color: var(--gray-600);
+        }
+
+        /* Sources Table */
+        .sources-container {
+            background: var(--gray-100);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        .sources-header {
+            padding: 16px 20px;
+            background: var(--gray-50);
+            border-bottom: 1px solid var(--gray-200);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sources-header h2 {
+            font-size: 1.1rem;
+            color: var(--gray-700);
+        }
+
+        .sources-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .sources-table th {
+            text-align: left;
+            padding: 12px 16px;
+            background: var(--gray-50);
+            color: var(--gray-600);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--gray-200);
+        }
+
+        .sources-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--gray-200);
+            font-size: 0.9rem;
+        }
+
+        .sources-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .sources-table tbody tr {
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .sources-table tbody tr:hover {
+            background: var(--gray-50);
+        }
+
+        .sources-table .checkbox-cell {
+            width: 40px;
+            text-align: center;
+        }
+
+        .sources-table .filename-cell {
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .sources-table .type-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .type-pdf { background: rgba(209, 161, 63, 0.2); color: #f0c674; }
+        .type-text { background: rgba(107, 140, 206, 0.2); color: #93b4e8; }
+
+        .review-progress {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .review-bar {
+            flex: 1;
+            height: 6px;
+            background: var(--gray-200);
+            border-radius: 3px;
+            overflow: hidden;
+            min-width: 60px;
+        }
+
+        .review-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.3s;
+        }
+
+        .review-fill.complete { background: var(--success); }
+        .review-fill.partial { background: var(--warning); }
+        .review-fill.none { background: var(--danger); }
+
+        .ready-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .ready-yes { background: rgba(91, 158, 91, 0.2); color: #8fd48f; }
+        .ready-no { background: rgba(201, 99, 84, 0.2); color: #f0a99e; }
+
+        /* Source Detail View */
+        .source-detail-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .source-detail-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .back-btn {
+            background: var(--gray-200);
+            color: var(--gray-700);
+            padding: 8px 16px;
+        }
+
+        .source-meta {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            font-size: 0.85rem;
+            color: var(--gray-600);
+        }
+
+        /* Entries List */
+        .entries-container {
+            background: var(--gray-100);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            overflow: hidden;
+        }
+
+        .entries-header {
+            padding: 16px 20px;
+            background: var(--gray-50);
+            border-bottom: 1px solid var(--gray-200);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .entries-header h2 {
+            font-size: 1.1rem;
+            color: var(--gray-700);
+        }
+
+        .entry-card {
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--gray-200);
+            transition: background 0.2s;
+        }
+
+        .entry-card:last-child { border-bottom: none; }
+
+        .entry-card:hover {
+            background: var(--gray-50);
+        }
+
+        .entry-card.disabled {
+            opacity: 0.6;
+            background: rgba(201, 99, 84, 0.06);
+        }
+
+        .entry-card.reviewed {
+            border-left: 3px solid var(--success);
+        }
+
+        .entry-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .entry-meta {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            font-size: 0.75rem;
+        }
+
+        .badge {
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-weight: 600;
+        }
+
+        .badge-source {
+            background: rgba(96, 165, 250, 0.15);
+            color: #93c5fd;
+        }
+
+        .badge-edited {
+            background: rgba(209, 161, 63, 0.18);
+            color: #f0c674;
+        }
+
+        .badge-disabled {
+            background: rgba(201, 99, 84, 0.18);
+            color: #f0a99e;
+        }
+
+        .badge-reviewed {
+            background: rgba(91, 158, 91, 0.18);
+            color: #8fd48f;
+        }
+
+        .entry-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+
+        .entry-checkbox input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            accent-color: var(--success);
+        }
+
+        .entry-label {
+            font-size: 0.8rem;
+            color: var(--gray-600);
+        }
+
+        /* Form Fields */
+        .field-group {
+            margin-bottom: 8px;
+        }
+
+        .field-label {
+            display: block;
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: var(--gray-600);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 2px;
+        }
+
+        .field-input {
+            width: 100%;
+            padding: 7px 10px;
+            border: 1px solid var(--gray-300);
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-family: inherit;
+            resize: vertical;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            line-height: 1.35;
+            background: var(--gray-50);
+            color: var(--gray-800);
+        }
+
+        .field-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(79, 169, 141, 0.18);
+        }
+
+        .field-input.instruction { background: rgba(79, 169, 141, 0.07); }
+        .field-input.output { background: rgba(91, 158, 91, 0.07); }
+
+        textarea.field-input { min-height: 56px; }
+
+        .entry-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+            flex-wrap: wrap;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 0.8rem;
+        }
+
+        /* Pagination */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            padding: 16px;
+            background: var(--gray-50);
+            border-top: 1px solid var(--gray-200);
+        }
+
+        .pagination button {
+            padding: 8px 14px;
+            min-width: 36px;
+        }
+
+        .pagination .page-info {
+            font-size: 0.85rem;
+            color: var(--gray-600);
+            padding: 0 12px;
+        }
+
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .toast {
+            padding: 12px 20px;
+            border-radius: var(--radius);
+            color: white;
+            font-size: 0.9rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+            animation: slideIn 0.3s ease-out;
+            max-width: 400px;
+        }
+
+        .toast.success { background: var(--success-strong); }
+        .toast.error { background: var(--danger-strong); }
+        .toast.info { background: var(--primary-dark); }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--gray-600);
+        }
+
+        .empty-state .icon {
+            font-size: 3rem;
+            margin-bottom: 16px;
+        }
+
+        .empty-state h3 {
+            font-size: 1.25rem;
+            color: var(--gray-700);
+            margin-bottom: 8px;
+        }
+
+        /* Add Source Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(17, 24, 39, 0.55);
+            z-index: 1100;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .modal-overlay.active { display: flex; }
+
+        .modal {
+            background: var(--gray-100);
+            border-radius: var(--radius);
+            width: 100%;
+            max-width: 560px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 18px 20px;
+            border-bottom: 1px solid var(--gray-200);
+        }
+
+        .modal-header h2 { font-size: 1.15rem; }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.1rem;
+            padding: 4px 8px;
+            color: var(--gray-600);
+        }
+
+        .modal-close:hover { color: var(--gray-800); }
+
+        .modal-tabs {
+            display: flex;
+            border-bottom: 1px solid var(--gray-200);
+        }
+
+        .modal-tab {
+            flex: 1;
+            padding: 12px;
+            background: var(--gray-50);
+            border: none;
+            border-radius: 0;
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: var(--gray-600);
+        }
+
+        .modal-tab.active {
+            background: var(--gray-100);
+            color: var(--primary);
+            box-shadow: inset 0 -2px 0 var(--primary);
+        }
+
+        .modal-body { padding: 20px; }
+
+        .modal-hint {
+            font-size: 0.8rem;
+            color: var(--gray-600);
+            margin-top: 8px;
+        }
+
+        /* Export Modal */
+        .export-sources-list {
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 12px 0;
+        }
+
+        .export-source-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            transition: background 0.15s;
+        }
+
+        .export-source-item:hover {
+            background: var(--gray-50);
+        }
+
+        .export-source-item input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--success);
+        }
+
+        .export-source-item.disabled {
+            opacity: 0.5;
+        }
+
+        /* Processing Panel */
+        .processing-panel {
+            background: var(--gray-100);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            margin-bottom: 24px;
+            overflow: hidden;
+            animation: slideDown 0.3s ease-out;
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 20px;
+            background: var(--gray-50);
+            border-bottom: 1px solid var(--gray-200);
+        }
+
+        .panel-header h3 { font-size: 1rem; color: var(--gray-700); margin: 0; }
+
+        .sources-list {
+            max-height: 300px; /* ~5 items */
+            overflow-y: auto;
+            padding: 8px 0;
+        }
+
+        /* Custom Scrollbar */
+        .sources-list::-webkit-scrollbar { width: 6px; }
+        .sources-list::-webkit-scrollbar-track { background: var(--gray-200); }
+        .sources-list::-webkit-scrollbar-thumb { background: var(--gray-300); border-radius: 3px; }
+        .sources-list::-webkit-scrollbar-thumb:hover { background: var(--gray-600); }
+
+        .source-item {
+            display: flex;
+            align-items: center;
+            padding: 10px 20px;
+            border-bottom: 1px solid var(--gray-200);
+            transition: background 0.2s;
+        }
+
+        .source-item:last-child { border-bottom: none; }
+        .source-item:hover { background: var(--gray-50); }
+
+        .source-info { flex: 1; min-width: 0; }
+        .source-name { font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .source-status { font-size: 0.75rem; color: var(--gray-600); margin-top: 2px; }
+
+        .progress-track {
+            width: 120px;
+            height: 6px;
+            background: var(--gray-200);
+            border-radius: 3px;
+            overflow: hidden;
+            margin: 0 12px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), #7c3aed);
+            transition: width 0.3s ease;
+            border-radius: 3px;
+        }
+
+        .cancel-btn {
+            background: none;
+            border: none;
+            color: var(--danger);
+            font-size: 1.1rem;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+
+        .cancel-btn:hover { background: rgba(201, 99, 84, 0.15); }
+
+        /* Spinner */
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            header .container { flex-direction: column; align-items: flex-start; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .action-bar { flex-direction: column; }
+            .action-bar button { width: 100%; justify-content: center; }
+            .sources-table { font-size: 0.8rem; }
+            .sources-table th, .sources-table td { padding: 8px 10px; }
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="container">
+        <div>
+            <h1 id="appHeader">Dataset Builder</h1>
+            <p class="subtitle" id="appSubtitle">Review and refine AI training data</p>
+        </div>
+        <div class="status-bar">
+            <div class="status-item">
+                <span class="status-dot" id="llamaDot"></span>
+                <span id="llamaStatus">Checking...</span>
+            </div>
+            <div class="status-item">
+                <span id="stateInfo">Loading state...</span>
+            </div>
+        </div>
+    </div>
+</header>
+
+<div class="container">
+
+    <!-- Stats -->
+    <div class="stats-grid" id="statsGrid">
+        <div class="stat-card">
+            <div class="value" id="statDocs">-</div>
+            <div class="label">Source Files</div>
+        </div>
+        <div class="stat-card">
+            <div class="value" id="statGenerated">-</div>
+            <div class="label">Q&A Generated</div>
+        </div>
+        <div class="stat-card">
+            <div class="value" id="statReady">-</div>
+            <div class="label">Sources Ready</div>
+        </div>
+        <div class="stat-card">
+            <div class="value" id="statReviewed">-</div>
+            <div class="label">Q&A Reviewed</div>
+        </div>
+        <div class="stat-card">
+            <div class="value" id="statEdited">-</div>
+            <div class="label">Q&A Edited</div>
+        </div>
+        <div class="stat-card">
+            <div class="value" id="statPending">-</div>
+            <div class="label">Pending Review</div>
+        </div>
+    </div>
+
+    <!-- Action Bar -->
+    <div class="action-bar">
+        <button class="btn-primary" id="btnAddSource" onclick="openSourceModal()">
+            ➕ Add Source
+        </button>
+        <button class="btn-primary" id="btnProcess" onclick="processDocuments()">
+            📄 Process Documents
+        </button>
+        <button class="btn-success" id="btnExport" onclick="openExportModal()" disabled>
+            💾 Export Dataset
+        </button>
+        <button class="btn-secondary" id="btnRefresh" onclick="refreshAll()">
+            🔄 Refresh
+        </button>
+    </div>
+
+    <!-- Processing Panel -->
+    <div class="processing-panel" id="processingPanel" style="display:none;">
+        <div class="panel-header">
+            <h3>📊 Processing Status</h3>
+            <button class="btn-danger btn-small stop-all-btn" onclick="cancelProcessing(true)">⛔ Stop All</button>
+        </div>
+        <div class="sources-list" id="sourcesList">
+            <!-- Populated by JS -->
+        </div>
+    </div>
+
+    <!-- View: Sources Table (default) -->
+    <div id="sourcesView">
+        <div class="sources-container">
+            <div class="sources-header">
+                <h2>📁 Source Files</h2>
+                <span style="font-size:0.85rem;color:var(--gray-600)" id="sourcesCount"></span>
+            </div>
+
+            <table class="sources-table" id="sourcesTable">
+                <thead>
+                    <tr>
+                        <th class="checkbox-cell">Export</th>
+                        <th>Filename</th>
+                        <th>Type</th>
+                        <th>Total Q&A</th>
+                        <th>Reviewed</th>
+                        <th>Progress</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="sourcesTableBody">
+                    <!-- Populated by JS -->
+                </tbody>
+            </table>
+
+            <div class="empty-state" id="sourcesEmptyState" style="display:none;">
+                <div class="icon">⛩/div>
+                <h3>No sources yet</h3>
+                <p>Add PDFs to <code>pdf/</code> or text files to <code>web/</code>, then click "Process Documents"</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- View: Source Detail (hidden by default) -->
+    <div id="sourceDetailView" style="display:none;">
+        <div class="source-detail-header">
+            <div class="source-detail-title">
+                <button class="btn-secondary back-btn" onclick="showSourcesView()">← Back to Sources</button>
+                <h2 id="detailSourceName">Source Name</h2>
+            </div>
+            <div class="source-meta" id="detailSourceMeta"></div>
+        </div>
+
+        <div style="margin-bottom:16px; display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn-info btn-small" onclick="markAllReviewed()">✓ Mark All as Reviewed</button>
+            <button class="btn-secondary btn-small" onclick="selectAllForExport()">☑ Select All for Export</button>
+        </div>
+
+        <div class="entries-container">
+            <div class="entries-header">
+                <h2>📝 Q&A Entries</h2>
+                <span style="font-size:0.85rem;color:var(--gray-600)" id="entriesCount"></span>
+            </div>
+
+            <div id="entriesList">
+                <!-- Populated by JS -->
+            </div>
+
+            <!-- Pagination -->
+            <div class="pagination" id="pagination" style="display:none;">
+                <button class="btn-secondary btn-small" onclick="goToPage(1)">« First</button>
+                <button class="btn-secondary btn-small" onclick="goToPage(currentPage - 1)">‹ Prev</button>
+                <span class="page-info" id="pageInfo"></span>
+                <button class="btn-secondary btn-small" onclick="goToPage(currentPage + 1)">Next ›</button>
+                <button class="btn-secondary btn-small" onclick="goToPage(totalPages)">Last »</button>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- Add Source Modal -->
+<div class="modal-overlay" id="sourceModalOverlay" onclick="closeSourceModalOnOverlay(event)">
+    <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h2>➕ Add New Source</h2>
+            <button class="modal-close" onclick="closeSourceModal()">✕</button>
+        </div>
+        <div class="modal-tabs">
+            <button class="modal-tab active" id="tabUrl" onclick="switchSourceTab('url')">📄 PDF from URL</button>
+            <button class="modal-tab" id="tabText" onclick="switchSourceTab('text')">📝 Paste Article</button>
+        </div>
+        <div class="modal-body" id="panelUrl">
+            <div class="field-group">
+                <label class="field-label">PDF URL</label>
+                <input type="text" class="field-input" id="sourceUrlInput" placeholder="https://example.com/report.pdf">
+                <p class="modal-hint">Downloads the file and saves it into <code>pdf/</code>.</p>
+            </div>
+            <button class="btn-primary" id="btnDownloadUrl" onclick="submitUrlSource()">⬇️ Download PDF</button>
+        </div>
+        <div class="modal-body" id="panelText" style="display:none;">
+            <div class="field-group">
+                <label class="field-label">Article Text</label>
+                <textarea class="field-input" id="sourceTextInput" style="min-height:220px" placeholder="Paste article content here..."></textarea>
+                <p class="modal-hint">Saved into <code>web/</code> as a file named with the current date and time.</p>
+            </div>
+            <button class="btn-primary" id="btnSaveText" onclick="submitTextSource()">💾 Save Article</button>
+        </div>
+    </div>
+</div>
+
+<!-- Export Modal -->
+<div class="modal-overlay" id="exportModalOverlay" onclick="closeExportModalOnOverlay(event)">
+    <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h2>💾 Export Dataset</h2>
+            <button class="modal-close" onclick="closeExportModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <p style="font-size:0.9rem; color:var(--gray-600); margin-bottom:12px;">
+                Select which sources to export. Only reviewed Q&A pairs will be included.
+            </p>
+            <div class="export-sources-list" id="exportSourcesList">
+                <!-- Populated by JS -->
+            </div>
+            <div style="margin-top:16px; display:flex; gap:8px;">
+                <button class="btn-secondary btn-small" onclick="selectAllExportSources(true)">Select All Ready</button>
+                <button class="btn-secondary btn-small" onclick="selectAllExportSources(false)">Deselect All</button>
+            </div>
+            <div style="margin-top:16px;">
+                <label class="field-label">Dataset Name</label>
+                <input type="text" class="field-input" id="exportNameInput" value="climate_dataset" style="margin-bottom:12px;">
+                <button class="btn-success" id="btnDoExport" onclick="doExport()">💾 Export Selected</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Process Sources Modal -->
+<div class="modal-overlay" id="processModalOverlay" onclick="closeProcessModalOnOverlay(event)">
+    <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h2>📄 Select Sources to Process</h2>
+            <button class="modal-close" onclick="closeProcessModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <p style="font-size:0.9rem; color:var(--gray-600); margin-bottom:12px;">
+                Select which sources to process. Already processed sources will be <strong>re-processed</strong> 
+                (existing Q&A will be removed and regenerated).
+            </p>
+            
+            <div style="margin-bottom:12px; display:flex; gap:8px; flex-wrap:wrap;">
+                <button class="btn-secondary btn-small" onclick="selectAllProcessSources(true)">Select All</button>
+                <button class="btn-secondary btn-small" onclick="selectAllProcessSources(false)">Deselect All</button>
+                <button class="btn-secondary btn-small" onclick="selectNewOnly()">Select New Only</button>
+            </div>
+
+            <div class="export-sources-list" id="processSourcesList">
+                <!-- Populated by JS -->
+            </div>
+
+            <div style="margin-top:16px; padding:12px; background:var(--gray-50); border-radius:6px; font-size:0.8rem; color:var(--gray-600);">
+                <strong>Note:</strong> Images extracted from PDFs are linked to their source PDF. 
+                Re-processing a PDF will also re-process all images embedded in it.
+            </div>
+
+            <div style="margin-top:16px; display:flex; gap:8px;">
+                <button class="btn-primary" id="btnDoProcess" onclick="doProcessSelected()">🚀 Process Selected</button>
+                <button class="btn-secondary" onclick="closeProcessModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+    // State
+    let currentPage = 1;
+    let totalPages = 0;
+    let perPage = 20;
+    let editingEntryId = null;
+    let editDraft = {};
+    let autoSaveTimer = null;
+    let currentSourceFile = null;  // Currently viewing source
+    let sourcesData = [];  // Cached sources data
+    let selectedExportSources = new Set();
+    let selectedProcessSources = new Set();
+    let availableSourcesData = [];  // Cache for all available sources
+    let selectedProcessImagesOnly = new Set();
+
+
+    // Init
+    // Init
+    document.addEventListener('DOMContentLoaded', () => {
+        checkLlamaStatus();
+        refreshAll();
+        loadAppConfig(); // Load dynamic title/subtitle
+    });
+
+    async function loadAppConfig() {
+        try {
+            const res = await fetch('/api/config');
+            const data = await res.json();
+            if (data.name) {
+                document.getElementById('appTitle').textContent = `${data.name} - Review Interface`;
+                document.getElementById('appHeader').textContent = `${data.name}`;
+            }
+            if (data.subtitle) {
+                document.getElementById('appSubtitle').textContent = data.subtitle;
+            }
+        } catch (e) { 
+            console.warn('Could not load app config, using defaults', e); 
+        }
+    }
+
+    // Toast notifications
+    function showToast(message, type = 'info') {
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+        container.appendChild(toast);
+        setTimeout(() => toast.remove(), 4000);
+    }
+
+    // Check llama server status
+    async function checkLlamaStatus() {
+        try {
+            const res = await fetch('/api/llama-status');
+            const data = await res.json();
+            const dot = document.getElementById('llamaDot');
+            const status = document.getElementById('llamaStatus');
+
+            if (data.status === 'connected') {
+                dot.className = 'status-dot';
+                status.textContent = 'Llama ✓';
+            } else {
+                dot.className = 'status-dot disconnected';
+                status.textContent = data.message || 'Llama ✗';
+            }
+        } catch (e) {
+            document.getElementById('llamaDot').className = 'status-dot disconnected';
+            document.getElementById('llamaStatus').textContent = 'Llama ✗';
+        }
+    }
+
+    // Refresh all data
+    async function refreshAll() {
+        await Promise.all([fetchStats(), fetchSources()]);
+    }
+
+    // Fetch stats
+    async function fetchStats() {
+        try {
+            const res = await fetch('/api/stats');
+            const data = await res.json();
+
+            document.getElementById('statDocs').textContent = data.total_documents || 0;
+            document.getElementById('statGenerated').textContent = data.generated_qa_pairs || 0;
+            document.getElementById('statEdited').textContent = data.edited_entries || 0;
+            document.getElementById('statPending').textContent = data.pending_review || 0;
+
+            // Calculate reviewed count from sources data if available
+            let totalReviewed = 0;
+            let totalReady = 0;
+            if (sourcesData.length > 0) {
+                totalReviewed = sourcesData.reduce((sum, s) => sum + s.reviewed_qa, 0);
+                totalReady = sourcesData.filter(s => s.ready_for_export).length;
+            }
+            document.getElementById('statReviewed').textContent = totalReviewed;
+            document.getElementById('statReady').textContent = totalReady;
+
+            const exportBtn = document.getElementById('btnExport');
+            exportBtn.disabled = (data.enabled_entries || 0) === 0;
+
+            // State info
+            if (data.generated_qa_pairs > 0) {
+                document.getElementById('stateInfo').textContent =
+                    `State saved (${data.generated_qa_pairs} entries)`;
+            } else {
+                document.getElementById('stateInfo').textContent = 'No state';
+            }
+
+        } catch (e) {
+            console.error('Error fetching stats:', e);
+        }
+    }
+
+    // Fetch sources list
+    async function fetchSources() {
+        try {
+            const res = await fetch('/api/sources');
+            if (!res.ok) {
+                throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+            }
+            const data = await res.json();
+            sourcesData = data.sources || [];
+            
+            console.log('[DEBUG] Sources loaded:', sourcesData.length, 'sources');
+            
+            renderSourcesTable(sourcesData, data);
+        } catch (e) {
+            console.error('Error fetching sources:', e);
+            showToast('Failed to load sources: ' + e.message, 'error');
+            
+            // Show empty state with error hint
+            const tbody = document.getElementById('sourcesTableBody');
+            const table = document.getElementById('sourcesTable');
+            const emptyState = document.getElementById('sourcesEmptyState');
+            table.style.display = 'none';
+            emptyState.style.display = 'block';
+            emptyState.innerHTML = `
+                <div class="icon">⚠️</div>
+                <h3>Error loading sources</h3>
+                <p>${e.message}</p>
+                <p style="margin-top:12px; font-size:0.85rem;">Check browser console (F12) for details</p>
+            `;
+        }
+    }
+
+
+    // Render sources table
+    function renderSourcesTable(sources, meta) {
+        const tbody = document.getElementById('sourcesTableBody');
+        const countEl = document.getElementById('sourcesCount');
+        const emptyState = document.getElementById('sourcesEmptyState');
+        const table = document.getElementById('sourcesTable');
+
+        if (!sources || sources.length === 0) {
+            table.style.display = 'none';
+            emptyState.style.display = 'block';
+            return;
+        }
+
+        table.style.display = 'table';
+        emptyState.style.display = 'none';
+        countEl.textContent = `${meta.total_sources} sources • ${meta.total_ready} ready`;
+
+        tbody.innerHTML = sources.map(src => {
+            const progressPercent = src.total_qa > 0 
+                ? Math.round((src.reviewed_qa / src.total_qa) * 100) 
+                : 0;
+            
+            let progressClass = 'none';
+            if (progressPercent === 100) progressClass = 'complete';
+            else if (progressPercent > 0) progressClass = 'partial';
+
+            const typeClass = src.type === 'PDF' ? 'type-pdf' : 'type-text';
+            const readyClass = src.ready_for_export ? 'ready-yes' : 'ready-no';
+            const readyText = src.ready_for_export ? '✓ Ready' : `${100 - progressPercent}% left`;
+
+            // Checkbox is only enabled if source is ready
+            const checkboxDisabled = !src.ready_for_export ? 'disabled' : '';
+            const checkboxChecked = selectedExportSources.has(src.filename) ? 'checked' : '';
+
+            return `
+                <tr onclick="showSourceDetail('${escapeHtml(src.filename)}')">
+                    <td class="checkbox-cell" onclick="event.stopPropagation()">
+                        <input type="checkbox" 
+                               ${checkboxDisabled}
+                               ${checkboxChecked}
+                               onchange="toggleExportSource('${escapeHtml(src.filename)}', this.checked)"
+                               title="${src.ready_for_export ? 'Include in export' : 'Review all Q&A first'}">
+                    </td>
+                    <td class="filename-cell" title="${escapeHtml(src.filename)}">${escapeHtml(src.filename)}</td>
+                    <td><span class="type-badge ${typeClass}">${src.type}</span></td>
+                    <td>${src.total_qa}</td>
+                    <td>${src.reviewed_qa}/${src.total_qa}</td>
+                    <td>
+                        <div class="review-progress">
+                            <div class="review-bar">
+                                <div class="review-fill ${progressClass}" style="width: ${progressPercent}%"></div>
+                            </div>
+                            <span style="font-size:0.75rem; color:var(--gray-600); min-width:35px;">${progressPercent}%</span>
+                        </div>
+                    </td>
+                    <td><span class="ready-badge ${readyClass}">${readyText}</span></td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    // Show source detail view
+    function showSourceDetail(filename) {
+        currentSourceFile = filename;
+        currentPage = 1;
+        
+        document.getElementById('sourcesView').style.display = 'none';
+        document.getElementById('sourceDetailView').style.display = 'block';
+        
+        const src = sourcesData.find(s => s.filename === filename);
+        if (src) {
+            document.getElementById('detailSourceName').textContent = filename;
+            document.getElementById('detailSourceMeta').innerHTML = `
+                <span>Type: ${src.type}</span>
+                <span>•</span>
+                <span>${src.total_qa} Q&A pairs</span>
+                <span>•</span>
+                <span>${src.reviewed_qa} reviewed</span>
+            `;
+        }
+        
+        fetchEntriesForSource();
+    }
+
+    // Show sources view (back from detail)
+    function showSourcesView() {
+        currentSourceFile = null;
+        document.getElementById('sourceDetailView').style.display = 'none';
+        document.getElementById('sourcesView').style.display = 'block';
+    }
+
+    // Fetch entries for a specific source
+    async function fetchEntriesForSource() {
+        try {
+            const url = currentSourceFile 
+                ? `/api/entries?page=${currentPage}&per_page=${perPage}&source_file=${encodeURIComponent(currentSourceFile)}`
+                : `/api/entries?page=${currentPage}&per_page=${perPage}`;
+            
+            const res = await fetch(url);
+            const data = await res.json();
+
+            totalPages = data.total_pages || 0;
+            renderEntries(data.entries, data);
+
+        } catch (e) {
+            console.error('Error fetching entries:', e);
+        }
+    }
+
+    // Render entries list
+    function renderEntries(entries, meta) {
+        const list = document.getElementById('entriesList');
+        const countEl = document.getElementById('entriesCount');
+        const pagination = document.getElementById('pagination');
+        const pageInfo = document.getElementById('pageInfo');
+
+        if (!entries || entries.length === 0) {
+            list.innerHTML = `
+                <div class="empty-state">
+                    <div class="icon">📭</div>
+                    <h3>No entries yet</h3>
+                    <p>Add PDFs to <code>pdf/</code> or text files to <code>web/</code>, then click "Process Documents"</p>
+                </div>`;
+            pagination.style.display = 'none';
+            return;
+        }
+
+        countEl.textContent = `${meta.total} total • Page ${meta.page} of ${meta.total_pages}`;
+        pagination.style.display = 'flex';
+        pageInfo.textContent = `Page ${currentPage} / ${totalPages}`;
+
+        list.innerHTML = entries.map(entry => {
+            const disabledClass = entry.enabled ? '' : 'disabled';
+            const reviewedClass = entry.reviewed ? 'reviewed' : '';
+            const editedBadge = entry.edited ? '<span class="badge badge-edited">Edited</span>' : '';
+            const disabledBadge = !entry.enabled ? '<span class="badge badge-disabled">Disabled</span>' : '';
+            const reviewedBadge = entry.reviewed ? '<span class="badge badge-reviewed">Reviewed</span>' : '';
+
+            return `
+                <div class="entry-card ${disabledClass} ${reviewedClass}" id="entry-${entry.id}">
+                    <div class="entry-header">
+                        <div class="entry-meta">
+                            <span style="font-size:0.75rem;color:var(--gray-600)">Chunk #${entry.chunk_index}</span>
+                            ${editedBadge}${disabledBadge}${reviewedBadge}
+                        </div>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            <label class="entry-checkbox">
+                                <input type="checkbox"
+                                       ${entry.enabled ? 'checked' : ''}
+                                       onchange="toggleEntry('${entry.id}', this.checked)"
+                                       title="${entry.enabled ? 'Disable this entry' : 'Enable this entry'}">
+                                <span class="entry-label">Export</span>
+                            </label>
+                            <label class="entry-checkbox">
+                                <input type="checkbox"
+                                       ${entry.reviewed ? 'checked' : ''}
+                                       onchange="toggleReviewed('${entry.id}', this.checked)"
+                                       title="${entry.reviewed ? 'Mark as not reviewed' : 'Mark as reviewed'}"
+                                       style="accent-color: var(--warning);">
+                                <span class="entry-label">Reviewed</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="field-group">
+                        <label class="field-label">Instruction (Question)</label>
+                        <textarea class="field-input instruction"
+                                  id="inst-${entry.id}"
+                                  onfocus="startEdit('${entry.id}')"
+                                  onchange="scheduleSave('${entry.id}')">${escapeHtml(entry.instruction)}</textarea>
+                    </div>
+
+                    <div class="field-group">
+                        <label class="field-label">Input (Context - optional)</label>
+                        <input type="text"
+                               class="field-input"
+                               id="inp-${entry.id}"
+                               value="${escapeHtml(entry.input)}"
+                               onfocus="startEdit('${entry.id}')"
+                               onchange="scheduleSave('${entry.id}')">
+                    </div>
+
+                    <div class="field-group">
+                        <label class="field-label">Output (Answer)</label>
+                        <textarea class="field-input output"
+                                  id="out-${entry.id}"
+                                  onfocus="startEdit('${entry.id}')"
+                                  onchange="scheduleSave('${entry.id}')">${escapeHtml(entry.output)}</textarea>
+                    </div>
+
+                    <div class="entry-actions">
+                        <button class="btn-primary btn-small" onclick="saveEntry('${entry.id}')">
+                            💾 Save Changes
+                        </button>
+                        <button class="btn-secondary btn-small" onclick="cancelEdit('${entry.id}')">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    // Escape HTML to prevent XSS
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML.replace(/"/g, '&quot;').replace(/\n/g, '\\n');
+    }
+
+    // Start editing an entry (capture original values)
+    function startEdit(entryId) {
+        if (editingEntryId === entryId) return;
+
+        editingEntryId = entryId;
+        const instEl = document.getElementById(`inst-${entryId}`);
+        const inpEl = document.getElementById(`inp-${entryId}`);
+        const outEl = document.getElementById(`out-${entryId}`);
+
+        editDraft[entryId] = {
+            instruction: instEl.value,
+            input: inpEl.value,
+            output: outEl.value
+        };
+    }
+
+    // Schedule auto-save after typing stops
+    function scheduleSave(entryId) {
+        clearTimeout(autoSaveTimer);
+        autoSaveTimer = setTimeout(() => saveEntry(entryId), 1500);
+    }
+
+    // Save entry changes to server
+    async function saveEntry(entryId) {
+        clearTimeout(autoSaveTimer);
+
+        const instEl = document.getElementById(`inst-${entryId}`);
+        const inpEl = document.getElementById(`inp-${entryId}`);
+        const outEl = document.getElementById(`out-${entryId}`);
+
+        const instruction = instEl.value;
+        const input = inpEl.value;
+        const output = outEl.value;
+
+        try {
+            const res = await fetch(`/api/entries/${entryId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: entryId,
+                    instruction: instruction,
+                    input: input,
+                    output: output
+                })
+            });
+
+            if (res.ok) {
+                showToast('Entry saved ✓', 'success');
+                editingEntryId = null;
+                delete editDraft[entryId];
+                await Promise.all([fetchStats(), fetchSources()]);
+                if (currentSourceFile) {
+                    await fetchEntriesForSource();
+                }
+            } else {
+                showToast('Failed to save entry', 'error');
+            }
+        } catch (e) {
+            showToast('Error saving entry: ' + e.message, 'error');
+        }
+    }
+
+    // Cancel edit and restore original values
+    function cancelEdit(entryId) {
+        clearTimeout(autoSaveTimer);
+
+        if (editDraft[entryId]) {
+            document.getElementById(`inst-${entryId}`).value = editDraft[entryId].instruction;
+            document.getElementById(`inp-${entryId}`).value = editDraft[entryId].input;
+            document.getElementById(`out-${entryId}`).value = editDraft[entryId].output;
+        }
+
+        editingEntryId = null;
+        delete editDraft[entryId];
+    }
+
+    // Toggle entry enabled/disabled
+    async function toggleEntry(entryId, enabled) {
+        const card = document.getElementById(`entry-${entryId}`);
+
+        try {
+            const res = await fetch(`/api/entries/${entryId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: entryId,
+                    enabled: enabled
+                })
+            });
+
+            if (res.ok) {
+                card.classList.toggle('disabled', !enabled);
+                await Promise.all([fetchStats(), fetchSources()]);
+            } else {
+                const checkbox = card.querySelector('input[type="checkbox"]:first-child');
+                checkbox.checked = !enabled;
+                showToast('Failed to update entry', 'error');
+            }
+        } catch (e) {
+            const checkbox = card.querySelector('input[type="checkbox"]:first-child');
+            checkbox.checked = !enabled;
+            showToast('Error: ' + e.message, 'error');
+        }
+    }
+
+    // Toggle reviewed status
+    async function toggleReviewed(entryId, reviewed) {
+        try {
+            const res = await fetch(`/api/entries/${entryId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: entryId,
+                    reviewed: reviewed
+                })
+            });
+
+            if (res.ok) {
+                const card = document.getElementById(`entry-${entryId}`);
+                card.classList.toggle('reviewed', reviewed);
+                
+                // Re-render badges
+                await Promise.all([fetchStats(), fetchSources()]);
+                if (currentSourceFile) {
+                    await fetchEntriesForSource();
+                }
+            } else {
+                showToast('Failed to update review status', 'error');
+            }
+        } catch (e) {
+            showToast('Error: ' + e.message, 'error');
+        }
+    }
+
+    // Mark all entries in current source as reviewed
+    async function markAllReviewed() {
+        if (!currentSourceFile) return;
+        
+        try {
+            const res = await fetch(`/api/sources/${encodeURIComponent(currentSourceFile)}/mark-all-reviewed`, {
+                method: 'POST'
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                showToast(`Marked ${data.updated} entries as reviewed ✓`, 'success');
+                await Promise.all([fetchStats(), fetchSources()]);
+                await fetchEntriesForSource();
+            } else {
+                showToast('Failed to mark entries', 'error');
+            }
+        } catch (e) {
+            showToast('Error: ' + e.message, 'error');
+        }
+    }
+
+    // Select all entries for export in current source
+    async function selectAllForExport() {
+        if (!currentSourceFile) return;
+        
+        // Get all entry IDs for this source
+        try {
+            const res = await fetch(`/api/entries?page=1&per_page=1000&source_file=${encodeURIComponent(currentSourceFile)}`);
+            const data = await res.json();
+            
+            const ids = data.entries.map(e => e.id);
+            
+            // Toggle all to enabled
+            for (const id of ids) {
+                await fetch(`/api/entries/${id}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, enabled: true })
+                });
+            }
+            
+            showToast(`Enabled ${ids.length} entries for export`, 'success');
+            await fetchEntriesForSource();
+        } catch (e) {
+            showToast('Error: ' + e.message, 'error');
+        }
+    }
+
+    // Process documents
+    // ==================== PROCESSING & PROGRESS TRACKING ====================
+    let processingPollInterval = null;
+
+    function processDocuments() {
+        renderProcessSourcesList();
+        document.getElementById('processModalOverlay').classList.add('active');
+    }
+
+    function closeProcessModal() {
+        document.getElementById('processModalOverlay').classList.remove('active');
+    }
+
+    function closeProcessModalOnOverlay(e) {
+        if (e.target.id === 'processModalOverlay') closeProcessModal();
+    }
+
+    async function renderProcessSourcesList() {
+        const list = document.getElementById('processSourcesList');
+        list.innerHTML = '<p style="text-align:center; padding:20px; color:var(--gray-600);"><span class="spinner"></span> Loading sources...</p>';
+
+        try {
+            const res = await fetch('/api/available-sources');
+            const data = await res.json();
+            availableSourcesData = data.sources || [];
+
+            if (availableSourcesData.length === 0) {
+                list.innerHTML = '<p style="color:var(--gray-600); text-align:center; padding:20px;">No source files found. Add PDFs to <code>pdf/</code> or text files to <code>web/</code>.</p>';
+                return;
+            }
+
+            let html = `
+                <div style="margin-bottom:12px; padding:8px 12px; background:var(--gray-50); border-radius:6px; font-size:0.8rem; color:var(--gray-600);">
+                    📁 ${data.total} total files •
+                    <span style="color:var(--success); font-weight:600;">${data.unprocessed} new</span> •
+                    <span style="color:var(--warning); font-weight:600;">${data.processed} already processed</span>
+                </div>
+            `;
+
+            html += availableSourcesData.map(src => {
+                const isChecked = selectedProcessSources.has(src.filename);
+                const isImagesOnly = selectedProcessImagesOnly.has(src.filename);
+                const isProcessed = src.is_processed;
+                const statusText = isProcessed ? '🔄 Re-process' : '✨ New';
+                const statusColor = isProcessed ? 'var(--warning)' : 'var(--success)';
+
+                return `
+                    <div class="export-source-item">
+                        <input type="checkbox"
+                               id="process-src-${src.filename.replace(/[^a-zA-Z0-9]/g, '_')}"
+                               ${isChecked ? 'checked' : ''}
+                               onchange="toggleProcessSource('${escapeHtml(src.filename)}', this.checked)">
+                        <div style="flex:1;">
+                            <div style="font-weight:600;">${escapeHtml(src.filename)}</div>
+                            <div style="font-size:0.8rem; color:var(--gray-600);">
+                                ${src.type} • ${src.total_qa} Q&A pairs •
+                                <span style="color:${statusColor}; font-weight:600;">${statusText}</span>
+                            </div>
+                        </div>
+                        <label style="display:flex; align-items:center; gap:4px; font-size:0.75rem; color:var(--gray-600); cursor:pointer; user-select:none;">
+                            <input type="checkbox"
+                                   ${isChecked ? '' : 'disabled'}
+                                   ${isImagesOnly ? 'checked' : ''}
+                                   onchange="toggleImagesOnly('${escapeHtml(src.filename)}', this.checked)">
+                            🖼️ Images Only
+                        </label>
+                    </div>
+                `;
+            }).join('');
+
+            list.innerHTML = html;
+        } catch (e) {
+            list.innerHTML = `<p style="color:var(--danger); text-align:center; padding:20px;">Error loading sources: ${e.message}</p>`;
+        }
+    }
+
+    function toggleProcessSource(filename, checked) {
+        if (checked) selectedProcessSources.add(filename);
+        else {
+            selectedProcessSources.delete(filename);
+            selectedProcessImagesOnly.delete(filename);
+        }
+        renderProcessSourcesList();
+    }
+
+    function toggleImagesOnly(filename, checked) {
+        if (checked) selectedProcessImagesOnly.add(filename);
+        else selectedProcessImagesOnly.delete(filename);
+    }
+
+    function selectAllProcessSources(select) {
+        availableSourcesData.forEach(src => {
+            if (select) selectedProcessSources.add(src.filename);
+            else {
+                selectedProcessSources.delete(src.filename);
+                selectedProcessImagesOnly.delete(src.filename);
+            }
+        });
+        renderProcessSourcesList();
+    }
+
+    function selectNewOnly() {
+        selectedProcessSources.clear();
+        selectedProcessImagesOnly.clear();
+        availableSourcesData.forEach(src => {
+            if (!src.is_processed) selectedProcessSources.add(src.filename);
+        });
+        renderProcessSourcesList();
+    }
+
+    async function doProcessSelected() {
+        const btn = document.getElementById('btnDoProcess');
+        const selected = Array.from(selectedProcessSources);
+
+        if (selected.length === 0) {
+            showToast('Please select at least one source to process', 'error');
+            return;
+        }
+
+        closeProcessModal();
+        
+        // Toggle main button to Stop
+        const mainBtn = document.getElementById('btnProcess');
+        mainBtn.disabled = true;
+        mainBtn.innerHTML = '⛔ Stop Processing';
+        mainBtn.onclick = () => cancelProcessing(true);
+
+        // Show panel & start polling
+        document.getElementById('processingPanel').style.display = 'block';
+        startPolling();
+
+        try {
+            const res = await fetch('/api/process', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    sources: selected,
+                    images_only: Array.from(selectedProcessImagesOnly)
+                })
+            });
+
+            if (!res.ok) throw new Error(await res.text());
+        } catch (e) {
+            showToast('Processing failed: ' + e.message, 'error');
+            resetMainButton();
+        }
+    }
+
+    function startPolling() {
+        stopPolling();
+        processingPollInterval = setInterval(async () => {
+            try {
+                const res = await fetch('/api/processing-status');
+                const state = await res.json();
+                renderProcessingPanel(state);
+
+                if (!state.is_processing) {
+                    stopPolling();
+                    resetMainButton();
+                    document.getElementById('processingPanel').style.display = 'none';
+                    showToast('Processing complete!', 'success');
+                    await refreshAll();
+                }
+            } catch (e) { console.error('Poll error:', e); }
+        }, 800);
+    }
+
+    function stopPolling() {
+        if (processingPollInterval) {
+            clearInterval(processingPollInterval);
+            processingPollInterval = null;
+        }
+    }
+
+    function resetMainButton() {
+        const mainBtn = document.getElementById('btnProcess');
+        mainBtn.disabled = false;
+        mainBtn.innerHTML = '📄 Process Documents';
+        mainBtn.onclick = processDocuments;
+    }
+
+    async function cancelProcessing(all) {
+        await fetch('/api/cancel-processing', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ all, current: !all })
+        });
+        if (all) {
+            stopPolling();
+            resetMainButton();
+            document.getElementById('processingPanel').style.display = 'none';
+            showToast('All processing cancelled', 'info');
+        }
+    }
+
+    function renderProcessingPanel(state) {
+        const list = document.getElementById('sourcesList');
+        const items = [];
+
+        if (state.current_source) {
+            items.push({ name: state.current_source, status: 'processing', progress: state.progress_percent });
+        }
+        state.queue.forEach(src => {
+            if (src !== state.current_source) items.push({ name: src, status: 'queued', progress: 0 });
+        });
+        state.completed.slice(-5).forEach(src => {
+            items.push({ name: src, status: 'completed', progress: 100 });
+        });
+
+        list.innerHTML = items.map(item => {
+            let statusHtml = '';
+            if (item.status === 'processing') {
+                statusHtml = `
+                    <div class="progress-track"><div class="progress-fill" style="width:${item.progress}%"></div></div>
+                    <span style="font-size:0.75rem; color:var(--gray-600); min-width:35px;">${item.progress}%</span>
+                    <button class="cancel-btn" onclick="cancelProcessing(false)" title="Stop this source">✕</button>`;
+            } else if (item.status === 'queued') {
+                statusHtml = `<span style="font-size:0.8rem; color:var(--warning);">⏳ Enlisted</span>`;
+            } else {
+                statusHtml = `<span style="font-size:0.8rem; color:var(--success);">✅ Done</span>`;
+            }
+
+            return `
+                <div class="source-item">
+                    <div class="source-info"><div class="source-name" title="${item.name}">${item.name}</div></div>
+                    ${statusHtml}
+                </div>`;
+        }).join('');
+    }
+
+   
+    function toggleImagesOnly(filename, checked) {
+        if (checked) {
+            selectedProcessImagesOnly.add(filename);
+        } else {
+            selectedProcessImagesOnly.delete(filename);
+        }
+    }
+   
+    // Export modal
+    function openExportModal() {
+        renderExportSourcesList();
+        document.getElementById('exportModalOverlay').classList.add('active');
+    }
+
+    function closeExportModal() {
+        document.getElementById('exportModalOverlay').classList.remove('active');
+    }
+
+    function closeExportModalOnOverlay(e) {
+        if (e.target.id === 'exportModalOverlay') closeExportModal();
+    }
+
+    function renderExportSourcesList() {
+        const list = document.getElementById('exportSourcesList');
+        
+        if (sourcesData.length === 0) {
+            list.innerHTML = '<p style="color:var(--gray-600); text-align:center; padding:20px;">No sources available</p>';
+            return;
+        }
+
+        list.innerHTML = sourcesData.map(src => {
+            const isReady = src.ready_for_export;
+            const isChecked = selectedExportSources.has(src.filename);
+            const disabledClass = !isReady ? 'disabled' : '';
+            const checkboxDisabled = !isReady ? 'disabled' : '';
+            
+            return `
+                <div class="export-source-item ${disabledClass}">
+                    <input type="checkbox" 
+                           id="export-src-${src.filename.replace(/[^a-zA-Z0-9]/g, '_')}"
+                           ${checkboxDisabled}
+                           ${isChecked ? 'checked' : ''}
+                           onchange="toggleExportSource('${escapeHtml(src.filename)}', this.checked)">
+                    <div style="flex:1;">
+                        <div style="font-weight:600;">${escapeHtml(src.filename)}</div>
+                        <div style="font-size:0.8rem; color:var(--gray-600);">
+                            ${src.type} • ${src.reviewed_qa}/${src.total_qa} reviewed
+                            ${!isReady ? '• <span style="color:var(--danger)">Not ready</span>' : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function toggleExportSource(filename, checked) {
+        if (checked) {
+            selectedExportSources.add(filename);
+        } else {
+            selectedExportSources.delete(filename);
+        }
+        
+        // Update sources table checkboxes if visible
+        const checkboxes = document.querySelectorAll('#sourcesTableBody input[type="checkbox"]');
+        checkboxes.forEach(cb => {
+            const row = cb.closest('tr');
+            const fname = row.querySelector('.filename-cell').textContent;
+            if (fname === filename) {
+                cb.checked = checked;
+            }
+        });
+    }
+
+    function selectAllExportSources(select) {
+        sourcesData.forEach(src => {
+            if (select && src.ready_for_export) {
+                selectedExportSources.add(src.filename);
+            } else {
+                selectedExportSources.delete(src.filename);
+            }
+        });
+        renderExportSourcesList();
+    }
+
+    async function doExport() {
+        const btn = document.getElementById('btnDoExport');
+        const datasetName = document.getElementById('exportNameInput').value.trim() || 'climate_dataset';
+        
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> Exporting...';
+
+        try {
+            const res = await fetch('/api/export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    dataset_name: datasetName,
+                    sources: Array.from(selectedExportSources)
+                })
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                showToast(data.message || `Exported ${data.entries_exported} entries ✓`, 'success');
+                closeExportModal();
+                refreshAll();
+            } else {
+                const error = await res.json();
+                throw new Error(error.detail || 'Export failed');
+            }
+        } catch (e) {
+            showToast('Export failed: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '💾 Export Selected';
+        }
+    }
+
+    // Add Source modal
+    function openSourceModal() {
+        document.getElementById('sourceModalOverlay').classList.add('active');
+    }
+
+    function closeSourceModal() {
+        document.getElementById('sourceModalOverlay').classList.remove('active');
+        document.getElementById('sourceUrlInput').value = '';
+        document.getElementById('sourceTextInput').value = '';
+    }
+
+    function closeSourceModalOnOverlay(e) {
+        if (e.target.id === 'sourceModalOverlay') closeSourceModal();
+    }
+
+    function switchSourceTab(tab) {
+        const isUrl = tab === 'url';
+        document.getElementById('tabUrl').classList.toggle('active', isUrl);
+        document.getElementById('tabText').classList.toggle('active', !isUrl);
+        document.getElementById('panelUrl').style.display = isUrl ? 'block' : 'none';
+        document.getElementById('panelText').style.display = isUrl ? 'none' : 'block';
+    }
+
+    async function submitUrlSource() {
+        const input = document.getElementById('sourceUrlInput');
+        const url = input.value.trim();
+        if (!url) { showToast('Enter a PDF URL', 'error'); return; }
+
+        const btn = document.getElementById('btnDownloadUrl');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> Downloading...';
+
+        try {
+            const res = await fetch('/api/sources/url', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message || 'PDF saved ✓', 'success');
+                closeSourceModal();
+                refreshAll();
+            } else {
+                throw new Error(data.detail || 'Download failed');
+            }
+        } catch (e) {
+            showToast('Error: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '⬇️ Download PDF';
+        }
+    }
+
+    async function submitTextSource() {
+        const textarea = document.getElementById('sourceTextInput');
+        const text = textarea.value.trim();
+        if (!text) { showToast('Paste some article text first', 'error'); return; }
+
+        const btn = document.getElementById('btnSaveText');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> Saving...';
+
+        try {
+            const res = await fetch('/api/sources/text', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(data.message || 'Article saved ✓', 'success');
+                closeSourceModal();
+                refreshAll();
+            } else {
+                throw new Error(data.detail || 'Save failed');
+            }
+        } catch (e) {
+            showToast('Error: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '💾 Save Article';
+        }
+    }
+
+    // Pagination
+    function goToPage(page) {
+        if (page < 1 || page > totalPages || page === currentPage) return;
+        currentPage = page;
+        if (currentSourceFile) {
+            fetchEntriesForSource();
+        }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+</script>
+
+</body>
+</html>
+

@@ -1,0 +1,8 @@
+env/
+__pycache__/
+.review_state.json
+.DS_Store
+TODO
+pdf/*
+web/*
+my_config.yaml

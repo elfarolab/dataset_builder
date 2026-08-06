@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+pydantic
+pdfplumber
+python-multipart
+jinja2
+httpx
+pyyaml
+pymupdf
