@@ -83,6 +83,9 @@ for d in [PDF_DIR, WEB_DIR, RESULT_DIR]:
 processed_documents: List[Dict] = []  # List of all Q&A pairs with metadata
 is_processing = False
 
+# Add this global to track the active processing task
+_active_processing_task = None
+
 # Global progress tracking state
 processing_state = {
     "is_processing": False,
@@ -266,20 +269,28 @@ Output ONLY valid JSONL format (one JSON object per line):
                         continue
 
                     content = ""
-                    async for line in response.aiter_lines():
-                        if should_cancel_all or (should_cancel_current and processing_state.get("current_source") == source_file):
-                            print(f"🛑 Cancelled image generation for {source_file}")
-                            break
-                        if not line or line.startswith(":"): continue
-                        if line.startswith("data: "):
-                            data = line[6:].strip()
-                            if data == "[DONE]": break
-                            try:
-                                chunk = json.loads(data)
-                                delta = chunk.get("choices", [{}])[0].get("delta", {})
-                                content += delta.get("content", "") or ""
-                            except json.JSONDecodeError: continue
+                    try:
+                        async for line in response.aiter_lines():
+                            if should_cancel_all or (should_cancel_current and processing_state.get("current_source") == source_file):
+                                print(f"🛑 Cancelled generation for {source_file}")
+                                break
+                            
+                            if not line or line.startswith(":"): continue
+                            if line.startswith("data: "):
+                                data = line[6:].strip()
+                                if data == "[DONE]": break
+                                try:
+                                    chunk = json.loads(data)
+                                    delta = chunk.get("choices", [{}])[0].get("delta", {})
+                                    content += delta.get("content", "") or ""
+                                except json.JSONDecodeError: continue
+                    except asyncio.CancelledError:
+                        print(f"🛑 Stream cancelled for {source_file}")
+                        return []  # Exit cleanly on cancellation
+                    finally:
+                        await response.aclose()  # Ensure connection closes gracefully
 
+                    # Early return if cancelled mid-stream
                     if should_cancel_all or (should_cancel_current and processing_state.get("current_source") == source_file):
                         return []
 
@@ -600,27 +611,28 @@ Output ONLY valid JSONL format (one JSON object per line, nothing else):
                         continue
 
                     content = ""
-                    async for line in response.aiter_lines():
-                        # Check cancellation every chunk
-                        if should_cancel_all or (should_cancel_current and processing_state.get("current_source") == source_file):
-                            print(f"🛑 Cancelled text generation for {source_file}")
-                            break
-
-                        if not line or line.startswith(":"):
-                            continue
-                        if line.startswith("data: "):
-                            data = line[6:].strip()
-                            if data == "[DONE]":
+                    try:
+                        async for line in response.aiter_lines():
+                            if should_cancel_all or (should_cancel_current and processing_state.get("current_source") == source_file):
+                                print(f"🛑 Cancelled generation for {source_file}")
                                 break
-                            try:
-                                chunk = json.loads(data)
-                                # Handle both completions and chat stream formats
-                                choice = chunk.get("choices", [{}])[0]
-                                text_delta = choice.get("text", "") or choice.get("delta", {}).get("content", "")
-                                content += text_delta
-                            except json.JSONDecodeError:
-                                continue
+                            
+                            if not line or line.startswith(":"): continue
+                            if line.startswith("data: "):
+                                data = line[6:].strip()
+                                if data == "[DONE]": break
+                                try:
+                                    chunk = json.loads(data)
+                                    delta = chunk.get("choices", [{}])[0].get("delta", {})
+                                    content += delta.get("content", "") or ""
+                                except json.JSONDecodeError: continue
+                    except asyncio.CancelledError:
+                        print(f"🛑 Stream cancelled for {source_file}")
+                        return []  # Exit cleanly on cancellation
+                    finally:
+                        await response.aclose()  # Ensure connection closes gracefully
 
+                    # Early return if cancelled mid-stream
                     if should_cancel_all or (should_cancel_current and processing_state.get("current_source") == source_file):
                         return []
 
@@ -810,12 +822,18 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
         save_state()
         print(f"\n🎯 Total Q&A pairs: {len(processed_documents)}")
 
+    except asyncio.CancelledError:
+        print("🛑 process_all_documents cancelled")
+        raise  # Re-raise so /api/process can catch it cleanly
+
     finally:
+        # Always reset state on exit (normal or cancelled)
         is_processing = False
         processing_state["is_processing"] = False
         processing_state["current_source"] = None
         should_cancel_current = False
         should_cancel_all = False
+        save_state()  # Save partial progress before exiting
 
 
 @app.get("/api/debug/state")
@@ -913,41 +931,51 @@ async def get_sources():
 
 @app.post("/api/process")
 async def process_documents(req: Optional[ProcessRequest] = None):
-    global is_processing, processed_documents
+    global is_processing, processed_documents, _active_processing_task
 
     if is_processing:
-        raise HTTPException(
-            status_code=409,
-            detail="Processing already in progress. Please wait for it to complete."
-        )
+        raise HTTPException(status_code=409, detail="Processing already in progress.")
 
     req = req or ProcessRequest()
     selected_sources = req.sources or []
     images_only_sources = set(req.images_only or [])
 
     if selected_sources:
-        print(f"Re-processing selected sources: {selected_sources}")
         original_count = len(processed_documents)
-        
-        # Keep entries if: source NOT selected, OR (source is images-only AND it's a text entry)
-        # Image entries use chunk_index == -1, text entries use >= 0
         processed_documents = [
             e for e in processed_documents
             if e.source_file not in selected_sources or
                (e.source_file in images_only_sources and e.chunk_index != -1)
         ]
-        
-        removed_count = original_count - len(processed_documents)
-        print(f"Removed {removed_count} existing entries from state")
+        print(f"Removed {original_count - len(processed_documents)} existing entries")
         save_state()
 
     pdf_count = len(glob.glob(os.path.join(PDF_DIR, "*.pdf")))
     txt_count = len(glob.glob(os.path.join(WEB_DIR, "*.txt")))
-
     if pdf_count == 0 and txt_count == 0:
-        raise HTTPException(status_code=400, detail="No files found in pdf/ or web/ directories")
+        raise HTTPException(status_code=400, detail="No files found in pdf/ or web/")
 
-    await process_all_documents(selected_sources=selected_sources, images_only_sources=images_only_sources)
+    _active_processing_task = asyncio.create_task(
+        process_all_documents(selected_sources=selected_sources, images_only_sources=images_only_sources)
+    )
+    
+    try:
+        await _active_processing_task
+    except asyncio.CancelledError:
+        print("🛑 Processing task cancelled by signal")
+        # Reset state cleanly
+        is_processing = False
+        processing_state["is_processing"] = False
+        processing_state["current_source"] = None
+        should_cancel_current = False
+        should_cancel_all = False
+        # Return a valid response instead of bubbling the error
+        return JSONResponse(
+            status_code=200,
+            content={"status": "cancelled", "message": "Processing was cancelled by user."}
+        )
+    finally:
+        _active_processing_task = None
 
     return {
         "status": "success",
@@ -955,7 +983,6 @@ async def process_documents(req: Optional[ProcessRequest] = None):
         "total_qa_pairs": len(processed_documents),
         "sources_processed": selected_sources if selected_sources else "all new"
     }
-
 
 @app.get("/api/entries")
 async def get_entries(page: int = 1, per_page: int = 20, source_file: Optional[str] = None):
@@ -1222,7 +1249,6 @@ async def get_app_config():
     return {"name": APP_NAME, "subtitle": APP_SUBTITLE}
 
 
-
 if __name__ == "__main__":
     import asyncio
     import signal
@@ -1232,18 +1258,22 @@ if __name__ == "__main__":
     host = config["server"].get("host", "0.0.0.0")
     port = config["server"].get("port", 8501)
 
-    uvicorn_config = uvicorn.Config(app, host=host, port=port, log_level="info")
+    uvicorn_config = uvicorn.Config(
+        app,
+        host=host,
+        port=port,
+        log_level="warning",
+        access_log=False,
+    )
     server = uvicorn.Server(uvicorn_config)
 
     shutdown_event = asyncio.Event()
 
-    async def graceful_shutdown():
-        """Save state, cancel pending tasks, stop server."""
-        print("\n" + "="*60)
+    async def cleanup():
+        print("\n" + "=" * 60)
         print("🛑 Received shutdown signal. Cleaning up...")
-        print("="*60)
+        print("=" * 60)
 
-        # Save state
         if processed_documents:
             try:
                 save_state()
@@ -1251,31 +1281,17 @@ if __name__ == "__main__":
             except Exception as e:
                 print(f"✗ Error saving state on exit: {e}")
 
-        # Cancel pending tasks with a proper timeout wrapper
-        loop = asyncio.get_running_loop()
-        pending = [t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task()]
+        # Cancel only *your* tasks if you can track them.
+        # If you can't, at least don't nuke all tasks (Uvicorn uses many).
+        # pending = [...]
+        #
+        # If you must cancel, do it carefully and exclude Uvicorn tasks.
 
-        if pending:
-            print(f"  Cancelling {len(pending)} pending task(s)...")
-            for task in pending:
-                task.cancel()
-
-            # Use wait_for to wrap gather, since gather() has no timeout param
-            try:
-                await asyncio.wait_for(
-                    asyncio.gather(*pending, return_exceptions=True),
-                    timeout=5.0
-                )
-            except asyncio.TimeoutError:
-                print("  ⚠ Some tasks did not cancel in time, forcing exit")
-
-        # Stop server
-        print("  Stopping Uvicorn...")
-        server.should_exit = True
-
-        print("="*60)
+        print("Stopping Uvicorn...")
+        # No need to set should_exit here if you already did it in the signal handler.
+        print("=" * 60)
         print("✓ Clean exit complete.")
-        print("="*60)
+        print("=" * 60)
 
     async def main():
         loop = asyncio.get_running_loop()
@@ -1283,22 +1299,41 @@ if __name__ == "__main__":
         def handle_signal(sig):
             sig_name = signal.Signals(sig).name
             print(f"\n  Received signal: {sig_name}")
+
             if not shutdown_event.is_set():
                 shutdown_event.set()
-                # Run shutdown in background so it doesn't block the signal handler
-                loop.create_task(graceful_shutdown())
+                
+                # 1. Tell your processing loop to stop immediately
+                global should_cancel_all
+                should_cancel_all = True
+                print("🛑 Setting should_cancel_all = True")
+
+                # 2. Force-cancel the active processing task if it exists
+                global _active_processing_task
+                if _active_processing_task and not _active_processing_task.done():
+                    print("🛑 Forcibly cancelling active processing task...")
+                    _active_processing_task.cancel()
+                
+                server.should_exit = True
 
         for sig in (signal.SIGINT, signal.SIGTERM):
             try:
                 loop.add_signal_handler(sig, handle_signal, sig)
             except NotImplementedError:
-                pass  # Windows limitation
+                pass
 
-        await server.serve()
+        try:
+            await server.serve()
+        except asyncio.CancelledError:
+            print("🛑 Uvicorn cancelled")
+        finally:
+            if shutdown_event.is_set():
+                await cleanup()
 
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\n✓ Exiting...")
         sys.exit(0)
+
 
