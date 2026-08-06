@@ -1,3 +1,13 @@
+## This is still a work in progress.
+
+It works, but there are still many improvements to be made.
+Performance isn’t the real bottleneck, because the LLM backend server determines the processing speed. However, it’s still worth considering code cleanup and further improvements.
+
+I’d rather have clean, performant code if possible.
+My TODO list right now has 10 entries.
+
+---
+
 # 📊 Universal Dataset Builder
 
 A web-based tool for creating high-quality AI training datasets from documents (PDFs and text files) using a local llama.cpp backend. Extract text, generate Q&A pairs, review them in a browser interface, and export clean JSONL datasets ready for fine-tuning.

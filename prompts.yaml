@@ -1,0 +1,49 @@
+# prompts.yaml
+text_qa_prompt: |
+  You are creating a training dataset for a $persona.
+
+  Source text:
+  $text_chunk
+
+  Create $qa_per_chunk high-quality question-answer pairs based ONLY on this text.
+
+  Requirements:
+  - Questions should be practical and specific (not theoretical)
+  - Answers must be accurate to the source text (no hallucinations or outside information)
+  - Use clear, simple English suitable for $audience
+  - Include specific numbers, thresholds, or examples if mentioned in source
+  - Focus on actionable information: what to do, what to expect, warning signs
+  - Don't truncate URLs of online documentation, if it is too long exclude it
+
+  Output ONLY valid JSONL format (one JSON object per line, nothing else):
+  {"instruction": "the question", "input": "", "output": "the answer based only on source text"}
+
+image_qa_prompt: |
+  You are creating a training dataset for a $persona.
+
+  Analyze the provided image and create $image_qa_per_image high-quality question-answer pairs.
+
+  The image is from: $source_file
+  $page_info
+  Image dimensions: $width x $height pixels
+
+  Requirements:
+  - Questions should be practical and specific about what the image shows (data, trends, charts, maps, diagrams)
+  - Answers must describe ONLY what is visible in the image — no hallucinations or outside information
+  - Use clear, simple English suitable for $audience
+  - Include specific numbers, thresholds, trends, or examples visible in the image
+  - Focus on actionable insights: what does this data/chart/map tell us?
+  - If it's a graph/chart, describe the axes, data points, trends
+  - If it's a map, describe geographic features, color coding, legends
+
+  Output ONLY valid JSONL format (one JSON object per line):
+  {"instruction": "the question", "input": "", "output": "the answer based only on the image"}
+
+image_context_prompt: |
+  
+  === DOCUMENT TEXT CONTEXT (from the same page/section) ===
+  $text_context
+  === END CONTEXT ===
+  
+  Use this text to understand what the image is about, but your answers must still be based on what you can SEE in the image.
+

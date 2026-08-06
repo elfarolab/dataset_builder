@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import List, Dict, Optional
 from pathlib import Path
 import re
+import string
 
 import asyncio
 import pdfplumber
@@ -32,7 +33,6 @@ from image_extractor import (
 with open("config.yaml", "r") as f:
     config = yaml.safe_load(f)
 
-
 # App configuration
 APP_CONFIG = config.get("app", {})
 APP_NAME = APP_CONFIG.get("name", "Dataset Builder")
@@ -40,6 +40,14 @@ APP_SUBTITLE = APP_CONFIG.get("subtitle", "Review and refine AI training data")
 PERSONA = APP_CONFIG.get("persona", "expert AI assistant")
 AUDIENCE = APP_CONFIG.get("audience", "general public")
 
+
+# Load prompt templates
+with open("prompts.yaml", "r") as f:
+    prompt_config = yaml.safe_load(f)
+
+TEXT_QA_TEMPLATE = string.Template(prompt_config["text_qa_prompt"])
+IMAGE_QA_TEMPLATE = string.Template(prompt_config["image_qa_prompt"])
+IMAGE_CONTEXT_TEMPLATE = string.Template(prompt_config["image_context_prompt"])
 
 
 @asynccontextmanager
@@ -213,28 +221,23 @@ async def generate_qa_from_image(image_info: Dict, source_file: str, image_index
     img_format = image_info.get("format", "png").lower()
     verbose = config.get("processing", {}).get("debug_print", False)
 
-    system_prompt = f"""You are creating a training dataset for a {PERSONA}.
-
-Analyze the provided image and create {config.get('processing', {}).get('image_qa_per_image', 3)} high-quality question-answer pairs.
-
-The image is from: {source_file}
-{f'Page: {image_info.get("page", "N/A")}' if image_info.get("page", 0) > 0 else ""}
-Image dimensions: {image_info.get("width", 0)}x{image_info.get("height", 0)} pixels
-
-Requirements:
-- Questions should be practical and specific about what the image shows (data, trends, charts, maps, diagrams)
-- Answers must describe ONLY what is visible in the image — no hallucinations or outside information
-- Use clear, simple English suitable for {AUDIENCE}
-- Include specific numbers, thresholds, trends, or examples visible in the image
-- Focus on actionable insights: what does this data/chart/map tell us?
-- If it's a graph/chart, describe the axes, data points, trends
-- If it's a map, describe geographic features, color coding, legends
-
-Output ONLY valid JSONL format (one JSON object per line):
-{{"instruction": "the question", "input": "", "output": "the answer based only on the image"}}"""
+    page_info = f"Page: {image_info.get('page', 'N/A')}" if image_info.get("page", 0) > 0 else ""
+    
+    system_prompt = IMAGE_QA_TEMPLATE.safe_substitute(
+        persona=PERSONA,
+        source_file=source_file,
+        page_info=page_info,
+        width=image_info.get("width", 0),
+        height=image_info.get("height", 0),
+        image_qa_per_image=config.get('processing', {}).get('image_qa_per_image', 3),
+        audience=AUDIENCE
+    )
 
     if text_context:
-        system_prompt += f"\n\n=== DOCUMENT TEXT CONTEXT (from the same page/section) ===\n{text_context}\n=== END CONTEXT ===\n\nUse this text to understand what the image is about, but your answers must still be based on what you can SEE in the image."
+        system_prompt += IMAGE_CONTEXT_TEMPLATE.safe_substitute(text_context=text_context)
+
+    if verbose:
+        print(f"\n🐛 [DEBUG] RAW IMAGE PROMPT SENT TO LLM (first 2000 chars):\n{system_prompt[:2000]}...\n")
 
     max_retries = 3
     retry_delay = 5
@@ -563,27 +566,19 @@ def chunk_text(text: str, max_length: int = 2500) -> List[str]:
     return chunks
 
 async def generate_qa_from_text(text_chunk: str, source_file: str, chunk_index: int) -> List[QAEntry]:
-    prompt = f"""You are creating a training dataset for a {PERSONA}.
-
-Source text:
-{text_chunk}
-
-Create {QA_PER_CHUNK} high-quality question-answer pairs based ONLY on this text.
-
-Requirements:
-- Questions should be practical and specific (not theoretical)
-- Answers must be accurate to the source text (no hallucinations or outside information)
-- Use clear, simple English suitable for {AUDIENCE}
-- Include specific numbers, thresholds, or examples if mentioned in source
-- Focus on actionable information: what to do, what to expect, warning signs
-- Don't truncate URLs of online documentation, if it is too long exclude it
-
-Output ONLY valid JSONL format (one JSON object per line, nothing else):
-{{"instruction": "the question", "input": "", "output": "the answer based only on source text"}}"""
+    verbose = config.get("processing", {}).get("debug_print", False)
+    
+    prompt = TEXT_QA_TEMPLATE.safe_substitute(
+        persona=PERSONA,
+        text_chunk=text_chunk,
+        qa_per_chunk=QA_PER_CHUNK,
+        audience=AUDIENCE
+    )
+    if verbose:
+        print(f"\n🐛 [DEBUG] RAW PROMPT SENT TO LLM (first 2000 chars):\n{prompt[:2000]}...\n")
 
     max_retries = 3
     retry_delay = 5
-    verbose = config.get("processing", {}).get("debug_print", False)
 
     for attempt in range(max_retries):
         if should_cancel_all or (should_cancel_current and processing_state.get("current_source") == source_file):
@@ -926,7 +921,7 @@ async def get_sources():
     for src, data in sources.items():
         data["ready_for_export"] = (data["reviewed_qa"] == data["total_qa"] and data["total_qa"] > 0)
     
-    print(f"[DEBUG] /api/sources: Found {len(sources)} sources, {len(processed_documents)} total entries")
+    #print(f"[DEBUG] /api/sources: Found {len(sources)} sources, {len(processed_documents)} total entries")
     
     return {
         "sources": list(sources.values()),
