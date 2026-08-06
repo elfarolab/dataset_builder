@@ -780,6 +780,11 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
                 else:
                     print(f"  Skipping text Q&A (Images Only mode)")
 
+                if should_cancel_all:
+                    print(f"🛑 Cancellation requested, skipping image processing for {filename}")
+                    processing_state["completed"].append(filename)
+                    continue
+
                 # --- Image Processing ---
                 if enable_multimodal and is_pdf:
                     print(f"\n  Extracting visual content...")
