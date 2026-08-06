@@ -44,15 +44,17 @@ Build accurate, actionable training data for domain-specific AI assistants. This
 
 3. **Install dependencies:**
    ```bash
-   pip install fastapi uvicorn httpx pdfplumber pydantic pyyaml Pillow fitz
+   pip install --upgrade -r requirements.txt
    ```
 
 4. **Start your llama.cpp server:**
    ```bash
    llama-server -m your-model.gguf --host 0.0.0.0 --port 8088
    ```
+   Notes:
+   - This command above is a generic example, customize the command with your llama-server custom options.
 
-5. **Configure the application:**
+6. **Configure the application:**
    Edit `config.yaml` to match your setup:
    ```yaml
    app:
@@ -81,11 +83,16 @@ Build accurate, actionable training data for domain-specific AI assistants. This
      image_qa_per_image: 3
      enable_multimodal: true
    ```
+   Notes:
+   - This sample above is generic, please use the provided config.yaml file as reference.
 
-6. **Create input directories:**
+7. **Create input directories:**
    ```bash
    mkdir -p pdf web result
    ```
+   Notes:
+   - Directories are automatically created by the script but you can still do it to store your documents before first run.
+   - Documents can also be added from the WEB UI.
    - Place PDF files in `pdf/`
    - Place text files in `web/`
 
@@ -93,7 +100,7 @@ Build accurate, actionable training data for domain-specific AI assistants. This
 
 1. **Start the web server:**
    ```bash
-   python main_qwen.py
+   python main.py
    ```
    The interface starts at `http://localhost:8501`.
 
