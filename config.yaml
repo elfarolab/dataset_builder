@@ -28,7 +28,7 @@ paths:
 processing:
   chunk_size: 1500
   qa_per_chunk: 5
-  batch_delay: 3.0  # seconds between chunks
+  batch_delay: 6.0  # seconds between chunks
   image_qa_per_image: 3
   enable_multimodal: true
   debug_print: false

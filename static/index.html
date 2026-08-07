@@ -788,6 +788,34 @@
 
         .cancel-btn:hover { background: rgba(201, 99, 84, 0.15); }
 
+        /* Source Actions (X button) */
+        .source-actions-cell {
+            width: 40px;
+            text-align: center;
+        }
+        
+        .source-delete-btn {
+            background: none;
+            border: none;
+            color: var(--gray-600);
+            font-size: 1.1rem;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: all 0.2s;
+            line-height: 1;
+        }
+        
+        .source-delete-btn:hover {
+            background: rgba(201, 99, 84, 0.15);
+            color: var(--danger);
+        }
+        
+        .source-delete-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
         /* Spinner */
         .spinner {
             display: inline-block;
@@ -909,6 +937,7 @@
                         <th>Reviewed</th>
                         <th>Progress</th>
                         <th>Status</th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody id="sourcesTableBody">
@@ -1204,45 +1233,51 @@
         }
     }
 
-
     // Render sources table
     function renderSourcesTable(sources, meta) {
         const tbody = document.getElementById('sourcesTableBody');
         const countEl = document.getElementById('sourcesCount');
         const emptyState = document.getElementById('sourcesEmptyState');
         const table = document.getElementById('sourcesTable');
-
+    
         if (!sources || sources.length === 0) {
             table.style.display = 'none';
             emptyState.style.display = 'block';
             return;
         }
-
+    
         table.style.display = 'table';
         emptyState.style.display = 'none';
         countEl.textContent = `${meta.total_sources} sources • ${meta.total_ready} ready`;
-
+    
         tbody.innerHTML = sources.map(src => {
-            const progressPercent = src.total_qa > 0 
-                ? Math.round((src.reviewed_qa / src.total_qa) * 100) 
+            const progressPercent = src.total_qa > 0
+                ? Math.round((src.reviewed_qa / src.total_qa) * 100)
                 : 0;
-            
+    
             let progressClass = 'none';
             if (progressPercent === 100) progressClass = 'complete';
             else if (progressPercent > 0) progressClass = 'partial';
-
+    
             const typeClass = src.type === 'PDF' ? 'type-pdf' : 'type-text';
             const readyClass = src.ready_for_export ? 'ready-yes' : 'ready-no';
             const readyText = src.ready_for_export ? '✓ Ready' : `${100 - progressPercent}% left`;
-
+    
             // Checkbox is only enabled if source is ready
             const checkboxDisabled = !src.ready_for_export ? 'disabled' : '';
             const checkboxChecked = selectedExportSources.has(src.filename) ? 'checked' : '';
-
+    
+            // X button: only show for sources that have been processed (total_qa > 0)
+            const hasEntries = src.total_qa > 0;
+            const deleteBtnDisabled = !hasEntries ? 'disabled' : '';
+            const deleteBtnTitle = hasEntries
+                ? `Remove all ${src.total_qa} Q&A entries for this source`
+                : 'Nothing to remove';
+    
             return `
                 <tr onclick="showSourceDetail('${escapeHtml(src.filename)}')">
                     <td class="checkbox-cell" onclick="event.stopPropagation()">
-                        <input type="checkbox" 
+                        <input type="checkbox"
                                ${checkboxDisabled}
                                ${checkboxChecked}
                                onchange="toggleExportSource('${escapeHtml(src.filename)}', this.checked)"
@@ -1261,6 +1296,12 @@
                         </div>
                     </td>
                     <td><span class="ready-badge ${readyClass}">${readyText}</span></td>
+                    <td class="source-actions-cell" onclick="event.stopPropagation()">
+                        <button class="source-delete-btn"
+                                ${deleteBtnDisabled}
+                                onclick="confirmRemoveSource('${escapeHtml(src.filename)}', ${src.total_qa})"
+                                title="${deleteBtnTitle}">✕</button>
+                    </td>
                 </tr>
             `;
         }).join('');
@@ -1547,6 +1588,35 @@
             }
         } catch (e) {
             showToast('Error: ' + e.message, 'error');
+        }
+    }
+
+    // Confirm and remove all Q&A entries for a source
+    async function confirmRemoveSource(filename, totalQa) {
+        if (!confirm(`Are you sure you want to remove all ${totalQa} Q&A entries for "${filename}"?\n\nThis will reset the processing status for this source. You can re-process it later.`)) {
+            return;
+        }
+    
+        try {
+            const res = await fetch(`/api/sources/${encodeURIComponent(filename)}`, {
+                method: 'DELETE'
+            });
+    
+            if (res.ok) {
+                const data = await res.json();
+                showToast(data.message || `Removed ${data.removed} entries`, 'success');
+                // Refresh everything
+                await Promise.all([fetchStats(), fetchSources()]);
+                // If we're currently viewing this source's detail, go back to sources list
+                if (currentSourceFile === filename) {
+                    showSourcesView();
+                }
+            } else {
+                const error = await res.json().catch(() => ({}));
+                showToast(`Failed to remove source: ${error.detail || 'Unknown error'}`, 'error');
+            }
+        } catch (e) {
+            showToast('Error removing source: ' + e.message, 'error');
         }
     }
 

@@ -1379,6 +1379,25 @@ async def add_text_source(req: TextSourceRequest):
     }
 
 
+@app.delete("/api/sources/{source_file}")
+async def remove_source(source_file: str):
+    """Remove all Q&A entries for a given source file from state, resetting its processing status"""
+    global processed_documents
+
+    original_count = len(processed_documents)
+    processed_documents = [e for e in processed_documents if e.source_file != source_file]
+    removed_count = original_count - len(processed_documents)
+
+    save_state()
+
+    return {
+        "status": "success",
+        "removed": removed_count,
+        "source_file": source_file,
+        "message": f"Removed {removed_count} Q&A entries for {source_file}"
+    }
+
+
 @app.get("/api/llama-status")
 async def check_llama_status():
     """Check if llama.cpp server is running"""
