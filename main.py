@@ -967,8 +967,9 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
                 else:
                     print(f"  Skipping text Q&A (Images Only mode)")
 
-                if should_cancel_all:
+                if should_cancel_all or (should_cancel_current and processing_state.get("current_source") == filename):
                     print(f"🛑 Cancellation requested, skipping image processing for {filename}")
+                    should_cancel_current = False
                     processing_state["completed"].append(filename)
                     continue
 
