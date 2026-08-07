@@ -19,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import yaml
+import certifi
 
 import base64
 from image_extractor import (
@@ -1324,7 +1325,11 @@ async def add_url_source(req: URLSourceRequest):
         raise HTTPException(status_code=400, detail="URL must start with http:// or https://")
 
     try:
-        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+			timeout=60.0,
+			follow_redirects=True,
+			verify=certifi.where()
+	) as client:
             resp = await client.get(url)
             resp.raise_for_status()
     except httpx.HTTPStatusError as e:
