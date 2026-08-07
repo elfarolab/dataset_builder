@@ -96,12 +96,19 @@ is_processing = False
 _active_processing_task = None
 
 # Global progress tracking state
+# Global progress tracking state
 processing_state = {
     "is_processing": False,
     "current_source": None,
     "progress_percent": 0,
     "queue": [],
-    "completed": []
+    "completed": [],
+    # Per-phase tracking
+    "phase": None,               # "text" or "images"
+    "text_chunks_completed": 0,
+    "text_chunks_total": 0,
+    "images_completed": 0,
+    "images_total": 0,
 }
 should_cancel_current = False
 should_cancel_all = False
@@ -870,24 +877,35 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
     try:
         files_to_skip = set() if selected_sources else get_files_to_skip_from_memory()
 
-        # 1. PRE-CALCULATE TOTAL WORK UNITS (fast, no LLM calls)
+        # 1. PRE-CALCULATE TOTAL WORK UNITS per phase (fast, no LLM calls)
+        processing_state["text_chunks_total"] = 0
+        processing_state["images_total"] = 0
+        processing_state["text_chunks_completed"] = 0
+        processing_state["images_completed"] = 0
+        processing_state["total_units"] = 0
+        processing_state["completed_units"] = 0
+
         for filename in sources_to_process:
             is_pdf = filename.lower().endswith('.pdf')
             filepath = os.path.join(PDF_DIR, filename) if is_pdf else os.path.join(WEB_DIR, filename)
-            if not os.path.exists(filepath): continue
+            if not os.path.exists(filepath):
+                continue
 
             # Estimate text chunks
             if filename not in (images_only_sources or set()):
                 text = extract_text_from_pdf(filepath) if is_pdf else extract_text_from_file(filepath)
                 if len(text.strip()) >= 100:
-                    processing_state["total_units"] += len(chunk_text(text, max_length=CHUNK_SIZE))
+                    processing_state["text_chunks_total"] += len(chunk_text(text, max_length=CHUNK_SIZE))
 
             # Count images
             if enable_multimodal and is_pdf:
                 images = extract_images_from_pdf(filepath)
-                processing_state["total_units"] += len(images)
+                processing_state["images_total"] += len(images)
 
-        print(f"📊 Total work units to process: {processing_state['total_units']}")
+        processing_state["total_units"] = (
+            processing_state["text_chunks_total"] + processing_state["images_total"]
+        )
+        print(f"📊 Total work: {processing_state['text_chunks_total']} text chunks + {processing_state['images_total']} images = {processing_state['total_units']} units")
 
         # 2. PROCESS LOOP
         for filename in sources_to_process:
@@ -933,8 +951,14 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
                             processed_documents.extend(new_entries)
                             print(f"    → Generated {len(new_entries)} NEW Q&A pairs")
 
-                            processing_state["completed_units"] += 1
-                            processing_state["progress_percent"] = int((processing_state["completed_units"] / max(processing_state["total_units"], 1)) * 100)
+                            processing_state["phase"] = "text"
+                            processing_state["text_chunks_completed"] += 1
+                            processing_state["completed_units"] = (
+                                processing_state["text_chunks_completed"] + processing_state["images_completed"]
+                            )
+                            processing_state["progress_percent"] = int(
+                                (processing_state["completed_units"] / max(processing_state["total_units"], 1)) * 100
+                            )
 
                             if len(new_entries) > 0: save_state()
                             if BATCH_DELAY > 0: await asyncio.sleep(BATCH_DELAY)
@@ -971,8 +995,14 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
                         processed_documents.extend(new_entries)
                         print(f"    → Generated {len(new_entries)} Q&A from image")
 
-                        processing_state["completed_units"] += 1
-                        progress = int((processing_state["completed_units"] / max(processing_state["total_units"], 1)) * 100)
+                        processing_state["phase"] = "images"
+                        processing_state["images_completed"] += 1
+                        processing_state["completed_units"] = (
+                            processing_state["text_chunks_completed"] + processing_state["images_completed"]
+                        )
+                        progress = int(
+                            (processing_state["completed_units"] / max(processing_state["total_units"], 1)) * 100
+                        )
                         processing_state["progress_percent"] = min(progress, 100)
 
                         if len(new_entries) > 0: save_state()
@@ -999,6 +1029,7 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
         is_processing = False
         processing_state["is_processing"] = False
         processing_state["current_source"] = None
+        processing_state["phase"] = None
         should_cancel_current = False
         should_cancel_all = False
         save_state()  # Save partial progress before exiting

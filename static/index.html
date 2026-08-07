@@ -197,6 +197,57 @@
             background: #3d5a88;
         }
 
+        .dual-bars {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        
+        .mini-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .mini-bar {
+            width: 80px;
+            height: 5px;
+            background: var(--gray-200);
+            border-radius: 3px;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        
+        .mini-fill-text {
+            height: 100%;
+            background: #5b9e5b;
+            transition: width 0.3s ease;
+            border-radius: 3px;
+        }
+        
+        .mini-fill-images {
+            height: 100%;
+            background: #6b8cce;
+            transition: width 0.3s ease;
+            border-radius: 3px;
+        }
+        
+        .progress-labels {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            padding-left: 10px;
+            min-width: 90px;
+        }
+        
+        .mini-label {
+            font-size: 0.65rem;
+            color: var(--gray-600);
+            white-space: nowrap;
+            height: 5px;
+            line-height: 5px;
+        }
+
         /* Progress Bar */
         .progress-container {
             background: var(--gray-100);
@@ -222,6 +273,98 @@
             background: linear-gradient(90deg, var(--primary), #7c3aed);
             transition: width 0.3s;
             border-radius: 4px;
+        }
+
+        /* Dual-phase progress */
+        .phase-progress {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 180px;
+        }
+        
+        .phase-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .phase-label {
+            font-size: 0.7rem;
+            color: var(--gray-600);
+            min-width: 52px;
+            text-align: right;
+            white-space: nowrap;
+        }
+        
+        .phase-bar {
+            flex: 1;
+            height: 8px;
+            background: var(--gray-200);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .phase-fill-text {
+            height: 100%;
+            background: linear-gradient(90deg, #5b9e5b, #8ad4bd);
+            transition: width 0.3s ease;
+            border-radius: 4px;
+        }
+        
+        .phase-fill-images {
+            height: 100%;
+            background: linear-gradient(90deg, #6b8cce, #a78bfa);
+            transition: width 0.3s ease;
+            border-radius: 4px;
+        }
+        
+        .phase-count {
+            font-size: 0.7rem;
+            color: var(--gray-600);
+            min-width: 50px;
+            text-align: left;
+            white-space: nowrap;
+        }
+        
+        .overall-progress-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 4px;
+            padding-top: 6px;
+            border-top: 1px solid var(--gray-200);
+        }
+        
+        .overall-label {
+            font-size: 0.7rem;
+            color: var(--gray-600);
+            min-width: 52px;
+            text-align: right;
+            font-weight: 600;
+        }
+        
+        .overall-bar {
+            flex: 1;
+            height: 6px;
+            background: var(--gray-200);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        
+        .overall-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary), #7c3aed);
+            transition: width 0.3s ease;
+            border-radius: 3px;
+        }
+        
+        .overall-count {
+            font-size: 0.7rem;
+            color: var(--gray-600);
+            min-width: 50px;
+            text-align: left;
+            font-weight: 600;
         }
 
         .progress-text {
@@ -784,6 +927,7 @@
             padding: 4px 8px;
             border-radius: 4px;
             transition: background 0.2s;
+            margin-left: 14px;
         }
 
         .cancel-btn:hover { background: rgba(201, 99, 84, 0.15); }
@@ -1867,7 +2011,7 @@
     function renderProcessingPanel(state) {
         const list = document.getElementById('sourcesList');
         const items = [];
-
+    
         if (state.current_source) {
             items.push({ name: state.current_source, status: 'processing', progress: state.progress_percent });
         }
@@ -1877,20 +2021,34 @@
         state.completed.slice(-5).forEach(src => {
             items.push({ name: src, status: 'completed', progress: 100 });
         });
-
+    
+        const textTotal = state.text_chunks_total || 0;
+        const textDone = state.text_chunks_completed || 0;
+        const imgTotal = state.images_total || 0;
+        const imgDone = state.images_completed || 0;
+    
+        const textPct = textTotal > 0 ? Math.round((textDone / textTotal) * 100) : 0;
+        const imgPct = imgTotal > 0 ? Math.round((imgDone / imgTotal) * 100) : 0;
+    
         list.innerHTML = items.map(item => {
             let statusHtml = '';
             if (item.status === 'processing') {
                 statusHtml = `
-                    <div class="progress-track"><div class="progress-fill" style="width:${item.progress}%"></div></div>
-                    <span style="font-size:0.75rem; color:var(--gray-600); min-width:35px;">${item.progress}%</span>
+                    <div class="dual-bars">
+                        <div class="mini-row"><div class="mini-bar"><div class="mini-fill-text" style="width:${textPct}%"></div></div></div>
+                        <div class="mini-row"><div class="mini-bar"><div class="mini-fill-images" style="width:${imgPct}%"></div></div></div>
+                    </div>
+                    <div class="progress-labels">
+                        <span class="mini-label">text ${textDone}/${textTotal}</span>
+                        <span class="mini-label">images ${imgDone}/${imgTotal}</span>
+                    </div>
                     <button class="cancel-btn" onclick="cancelProcessing(false)" title="Stop this source">✕</button>`;
             } else if (item.status === 'queued') {
-                statusHtml = `<span style="font-size:0.8rem; color:var(--warning);">⏳ Enlisted</span>`;
+                statusHtml = `<span style="font-size:0.8rem; color:var(--warning);">⏳ Queued</span>`;
             } else {
                 statusHtml = `<span style="font-size:0.8rem; color:var(--success);">✅ Done</span>`;
             }
-
+    
             return `
                 <div class="source-item">
                     <div class="source-info"><div class="source-name" title="${item.name}">${item.name}</div></div>
@@ -1899,7 +2057,6 @@
         }).join('');
     }
 
-   
     function toggleImagesOnly(filename, checked) {
         if (checked) {
             selectedProcessImagesOnly.add(filename);
