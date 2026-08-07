@@ -215,14 +215,13 @@ async def get_available_sources():
         "processed": sum(1 for s in sources if s["is_processed"]),
     }
 
-
 async def generate_qa_from_image(image_info: Dict, source_file: str, image_index: int, text_context: str = "") -> List[QAEntry]:
     image_b64 = image_to_base64(image_info["image_bytes"])
     img_format = image_info.get("format", "png").lower()
     verbose = config.get("processing", {}).get("debug_print", False)
 
     page_info = f"Page: {image_info.get('page', 'N/A')}" if image_info.get("page", 0) > 0 else ""
-    
+
     system_prompt = IMAGE_QA_TEMPLATE.safe_substitute(
         persona=PERSONA,
         source_file=source_file,
@@ -248,6 +247,7 @@ async def generate_qa_from_image(image_info: Dict, source_file: str, image_index
 
         try:
             async with httpx.AsyncClient(timeout=LLAMA_TIMEOUT * 2) as client:
+                # Use /v1/chat/completions for images (better multimodal support)
                 payload = {
                     "model": LLAMA_MODEL_NAME,
                     "messages": [
@@ -259,7 +259,7 @@ async def generate_qa_from_image(image_info: Dict, source_file: str, image_index
                     "max_tokens": LLAMA_MAX_TOKENS,
                     "temperature": LLAMA_TEMPERATURE,
                     "top_p": LLAMA_TOP_P,
-                    "stream": True  # Enable streaming
+                    "stream": True
                 }
 
                 print(f"Calling llama multimodal server (attempt {attempt + 1}/{max_retries})...")
@@ -272,64 +272,148 @@ async def generate_qa_from_image(image_info: Dict, source_file: str, image_index
                         continue
 
                     content = ""
+                    raw_lines_debug = []  # Collect raw lines for debugging
                     try:
                         async for line in response.aiter_lines():
                             if should_cancel_all or (should_cancel_current and processing_state.get("current_source") == source_file):
                                 print(f"🛑 Cancelled generation for {source_file}")
                                 break
-                            
-                            if not line or line.startswith(":"): continue
+
+                            if not line or line.startswith(":"):
+                                continue
+
+                            if verbose:
+                                raw_lines_debug.append(line[:200])  # Cap length for readability
+
                             if line.startswith("data: "):
                                 data = line[6:].strip()
                                 if data == "[DONE]": break
                                 try:
                                     chunk = json.loads(data)
-                                    delta = chunk.get("choices", [{}])[0].get("delta", {})
-                                    content += delta.get("content", "") or ""
-                                except json.JSONDecodeError: continue
+                                    # Handle both chat and completions streaming formats
+                                    if "choices" in chunk:
+                                        choice = chunk["choices"][0]
+                                        # Chat completions format
+                                        delta = choice.get("delta", {})
+                                        content += delta.get("content", "") or ""
+                                        # Completions format (non-chat)
+                                        if "text" in choice:
+                                            content += choice["text"] or ""
+                                    # Some servers return at root level
+                                    elif "content" in chunk:
+                                        content += chunk["content"] or ""
+                                except json.JSONDecodeError as e:
+                                    if verbose:
+                                        print(f"   ⚠️ JSON parse error on line: {line[:150]}")
+                                    continue
+
                     except asyncio.CancelledError:
                         print(f"🛑 Stream cancelled for {source_file}")
                         return []  # Exit cleanly on cancellation
                     finally:
                         await response.aclose()  # Ensure connection closes gracefully
 
+                    # === DEBUG: Print raw response if verbose ===
+                    if verbose:
+                        print(f"\n{'='*60}")
+                        print(f"🔍 RAW IMAGE RESPONSE FROM LLAMA ({len(content)} chars accumulated)")
+                        print(f"   Total SSE lines received: {len(raw_lines_debug)}")
+                        print(f"{'='*60}")
+                        if not content:
+                            print("⚠️ WARNING: No content was accumulated!")
+                            print("First 10 raw SSE lines:")
+                            for i, raw_line in enumerate(raw_lines_debug[:10]):
+                                print(f"   [{i}] {raw_line}")
+                        else:
+                            print(f"Accumulated content ({len(content)} chars):")
+                            print(content)
+                        print(f"{'='*60}\n")
+
                     # Early return if cancelled mid-stream
                     if should_cancel_all or (should_cancel_current and processing_state.get("current_source") == source_file):
                         return []
 
-                    # ... [KEEP EXISTING PARSING LOGIC BELOW] ...
+                    # === CLEAN RESPONSE ===
+                    # Strip thinking/reasoning tags FIRST
                     content_cleaned = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL | re.IGNORECASE)
                     content_cleaned = re.sub(r'<thinking>.*?</thinking>', '', content_cleaned, flags=re.DOTALL | re.IGNORECASE)
-                    content_cleaned = re.sub(r'^```(?:json)?\s*\n?', '', content_cleaned, flags=re.MULTILINE)
+                    # Strip markdown code blocks
+                    content_cleaned = re.sub(r'^```(?:jsonl|json)?\s*\n?', '', content_cleaned, flags=re.MULTILINE)
                     content_cleaned = re.sub(r'\n?```\s*$', '', content_cleaned, flags=re.MULTILINE)
 
-                    qa_entries = []
+                    if verbose:
+                        print(f"🧹 Cleaned content ({len(content_cleaned)} chars):")
+                        print(content_cleaned)
+                        print()
+
+                    # === DEFINE PATTERN BEFORE USING IT ===
                     json_pattern = re.compile(r'\{[^{}]*"instruction"[^{}]*"output"[^{}]*\}', re.DOTALL)
+
+                    # === DEBUG: Show regex matches ===
+                    if verbose:
+                        matches = list(json_pattern.finditer(content_cleaned))
+                        print(f"🔍 Regex found {len(matches)} potential JSON objects")
+                        for i, m in enumerate(matches):
+                            print(f"  Match {i} (first 150 chars): {m.group(0)[:150]}...")
+
+                    qa_entries = []
                     for match in json_pattern.finditer(content_cleaned):
                         json_str = ' '.join(match.group(0).split())
                         try:
                             qa_data = json.loads(json_str)
-                            if "instruction" not in qa_data or "output" not in qa_data: continue
-                            if "input" not in qa_data: qa_data["input"] = ""
+                            if "instruction" not in qa_data or "output" not in qa_data:
+                                continue
+                            if "input" not in qa_data:
+                                qa_data["input"] = ""
                             entry_id = f"{source_file.replace('/', '_').replace('.', '_')}_img_{image_index}_{len(qa_entries)}"
-                            qa_entries.append(QAEntry(id=entry_id, instruction=qa_data.get("instruction", ""), input=qa_data.get("input", ""), output=qa_data.get("output", ""), source_file=source_file, chunk_index=-1, enabled=True, edited=False))
-                        except json.JSONDecodeError: continue
+                            qa_entries.append(QAEntry(
+                                id=entry_id,
+                                instruction=qa_data.get("instruction", ""),
+                                input=qa_data.get("input", ""),
+                                output=qa_data.get("output", ""),
+                                source_file=source_file,
+                                chunk_index=-1,
+                                enabled=True,
+                                edited=False
+                            ))
+                        except json.JSONDecodeError as e:
+                            if verbose:
+                                print(f"   ⚠️ JSON parse error: {str(e)[:100]}")
+                            continue
 
+                    # Fallback: try line-by-line parsing if regex found nothing
                     if not qa_entries:
-                        for line in content_cleaned.strip().split('\n'):
+                        if verbose:
+                            print("⚠️ Regex found no matches, trying line-by-line fallback...")
+                        for line_num, line in enumerate(content_cleaned.strip().split('\n')):
                             line = re.sub(r'^[*`\s]*', '', line.strip()).strip()
                             line = re.sub(r'[*`]\s*$', '', line).strip()
-                            if len(line) < 20: continue
+                            if len(line) < 20:
+                                continue
                             try:
                                 qa_data = json.loads(line)
                                 if "instruction" in qa_data and "output" in qa_data:
-                                    if "input" not in qa_data: qa_data["input"] = ""
+                                    if "input" not in qa_data:
+                                        qa_data["input"] = ""
                                     entry_id = f"{source_file.replace('/', '_').replace('.', '_')}_img_{image_index}_{len(qa_entries)}"
-                                    qa_entries.append(QAEntry(id=entry_id, instruction=qa_data.get("instruction", ""), input=qa_data.get("input", ""), output=qa_data.get("output", ""), source_file=source_file, chunk_index=-1, enabled=True, edited=False))
-                            except json.JSONDecodeError: continue
+                                    qa_entries.append(QAEntry(
+                                        id=entry_id,
+                                        instruction=qa_data.get("instruction", ""),
+                                        input=qa_data.get("input", ""),
+                                        output=qa_data.get("output", ""),
+                                        source_file=source_file,
+                                        chunk_index=-1,
+                                        enabled=True,
+                                        edited=False
+                                    ))
+                            except json.JSONDecodeError:
+                                continue
 
-                    if qa_entries: return qa_entries
-                    print(f"[WARN] No valid Q&A parsed. Retrying...")
+                    if qa_entries:
+                        print(f"✅ Successfully parsed {len(qa_entries)} Q&A entries from image")
+                        return qa_entries
+
+                    print(f"[WARN] No valid Q&A parsed from image. Retrying...")
                     if attempt < max_retries - 1:
                         await asyncio.sleep(retry_delay)
                         retry_delay *= 2
@@ -593,7 +677,7 @@ async def generate_qa_from_text(text_chunk: str, source_file: str, chunk_index: 
                     "temperature": LLAMA_TEMPERATURE,
                     "top_p": LLAMA_TOP_P,
                     "stop": ["\n\n\n"],
-                    "stream": True  # Enable streaming
+                    "stream": True
                 }
 
                 print(f"Calling llama server (attempt {attempt + 1}/{max_retries})...")
@@ -606,64 +690,147 @@ async def generate_qa_from_text(text_chunk: str, source_file: str, chunk_index: 
                         continue
 
                     content = ""
+                    raw_lines_debug = []  # Collect raw lines for debugging
                     try:
                         async for line in response.aiter_lines():
                             if should_cancel_all or (should_cancel_current and processing_state.get("current_source") == source_file):
                                 print(f"🛑 Cancelled generation for {source_file}")
                                 break
+
+                            if not line or line.startswith(":"): 
+                                continue
                             
-                            if not line or line.startswith(":"): continue
+                            if verbose:
+                                raw_lines_debug.append(line[:200])  # Cap length for readability
+
                             if line.startswith("data: "):
                                 data = line[6:].strip()
                                 if data == "[DONE]": break
                                 try:
                                     chunk = json.loads(data)
-                                    delta = chunk.get("choices", [{}])[0].get("delta", {})
-                                    content += delta.get("content", "") or ""
-                                except json.JSONDecodeError: continue
+                                    # Handle both chat and completions streaming formats
+                                    if "choices" in chunk:
+                                        choice = chunk["choices"][0]
+                                        # Chat completions format
+                                        delta = choice.get("delta", {})
+                                        content += delta.get("content", "") or ""
+                                        # Completions format (non-chat)
+                                        if "text" in choice:
+                                            content += choice["text"] or ""
+                                    # Some servers return at root level
+                                    elif "content" in chunk:
+                                        content += chunk["content"] or ""
+                                except json.JSONDecodeError as e:
+                                    if verbose:
+                                        print(f"   ⚠️ JSON parse error on line: {line[:150]}")
+                                    continue
+
                     except asyncio.CancelledError:
                         print(f"🛑 Stream cancelled for {source_file}")
                         return []  # Exit cleanly on cancellation
                     finally:
                         await response.aclose()  # Ensure connection closes gracefully
 
+                    # === DEBUG: Print raw response if verbose ===
+                    if verbose:
+                        print(f"\n{'='*60}")
+                        print(f"🔍 RAW RESPONSE FROM LLAMA ({len(content)} chars accumulated)")
+                        print(f"   Total SSE lines received: {len(raw_lines_debug)}")
+                        print(f"{'='*60}")
+                        if not content:
+                            print("⚠️ WARNING: No content was accumulated!")
+                            print("First 10 raw SSE lines:")
+                            for i, raw_line in enumerate(raw_lines_debug[:10]):
+                                print(f"   [{i}] {raw_line}")
+                        else:
+                            print(f"Accumulated content ({len(content)} chars):")
+                            print(content)
+                        print(f"{'='*60}\n")
+
                     # Early return if cancelled mid-stream
                     if should_cancel_all or (should_cancel_current and processing_state.get("current_source") == source_file):
                         return []
 
-                    # ... [KEEP EXISTING PARSING LOGIC BELOW] ...
-                    # Strip thinking blocks, extract JSON, etc. exactly as before
+                    # === CLEAN RESPONSE ===
+                    # Strip thinking/reasoning tags FIRST
                     content_cleaned = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL | re.IGNORECASE)
                     content_cleaned = re.sub(r'<thinking>.*?</thinking>', '', content_cleaned, flags=re.DOTALL | re.IGNORECASE)
-                    content_cleaned = re.sub(r'^```(?:json)?\s*\n?', '', content_cleaned, flags=re.MULTILINE)
+                    # Strip markdown code blocks
+                    content_cleaned = re.sub(r'^```(?:jsonl|json)?\s*\n?', '', content_cleaned, flags=re.MULTILINE)
                     content_cleaned = re.sub(r'\n?```\s*$', '', content_cleaned, flags=re.MULTILINE)
 
-                    qa_entries = []
+                    if verbose:
+                        print(f"🧹 Cleaned content ({len(content_cleaned)} chars):")
+                        print(content_cleaned)
+                        print()
+
+                    # === DEFINE PATTERN BEFORE USING IT ===
                     json_pattern = re.compile(r'\{[^{}]*"instruction"[^{}]*"output"[^{}]*\}', re.DOTALL)
+
+                    # === DEBUG: Show regex matches ===
+                    if verbose:
+                        matches = list(json_pattern.finditer(content_cleaned))
+                        print(f"🔍 Regex found {len(matches)} potential JSON objects")
+                        for i, m in enumerate(matches):
+                            print(f"  Match {i} (first 150 chars): {m.group(0)[:150]}...")
+
+                    qa_entries = []
                     for match in json_pattern.finditer(content_cleaned):
                         json_str = ' '.join(match.group(0).split())
                         try:
                             qa_data = json.loads(json_str)
-                            if "instruction" not in qa_data or "output" not in qa_data: continue
-                            if "input" not in qa_data: qa_data["input"] = ""
+                            if "instruction" not in qa_data or "output" not in qa_data:
+                                continue
+                            if "input" not in qa_data:
+                                qa_data["input"] = ""
                             entry_id = f"{source_file.replace('/', '_').replace('.', '_')}_{chunk_index}_{len(qa_entries)}"
-                            qa_entries.append(QAEntry(id=entry_id, instruction=qa_data.get("instruction", ""), input=qa_data.get("input", ""), output=qa_data.get("output", ""), source_file=source_file, chunk_index=chunk_index, enabled=True, edited=False))
-                        except json.JSONDecodeError: continue
+                            qa_entries.append(QAEntry(
+                                id=entry_id,
+                                instruction=qa_data.get("instruction", ""),
+                                input=qa_data.get("input", ""),
+                                output=qa_data.get("output", ""),
+                                source_file=source_file,
+                                chunk_index=chunk_index,
+                                enabled=True,
+                                edited=False
+                            ))
+                        except json.JSONDecodeError as e:
+                            if verbose:
+                                print(f"   ⚠️ JSON parse error: {str(e)[:100]}")
+                            continue
 
+                    # Fallback: try line-by-line parsing if regex found nothing
                     if not qa_entries:
+                        if verbose:
+                            print("⚠️ Regex found no matches, trying line-by-line fallback...")
                         for line_num, line in enumerate(content_cleaned.strip().split('\n')):
                             line = re.sub(r'^[*`\s]*', '', line.strip()).strip()
                             line = re.sub(r'[*`]\s*$', '', line).strip()
-                            if len(line) < 20: continue
+                            if len(line) < 20:
+                                continue
                             try:
                                 qa_data = json.loads(line)
                                 if "instruction" in qa_data and "output" in qa_data:
-                                    if "input" not in qa_data: qa_data["input"] = ""
+                                    if "input" not in qa_data:
+                                        qa_data["input"] = ""
                                     entry_id = f"{source_file.replace('/', '_').replace('.', '_')}_{chunk_index}_{len(qa_entries)}"
-                                    qa_entries.append(QAEntry(id=entry_id, instruction=qa_data.get("instruction", ""), input=qa_data.get("input", ""), output=qa_data.get("output", ""), source_file=source_file, chunk_index=chunk_index, enabled=True, edited=False))
-                            except json.JSONDecodeError: continue
+                                    qa_entries.append(QAEntry(
+                                        id=entry_id,
+                                        instruction=qa_data.get("instruction", ""),
+                                        input=qa_data.get("input", ""),
+                                        output=qa_data.get("output", ""),
+                                        source_file=source_file,
+                                        chunk_index=chunk_index,
+                                        enabled=True,
+                                        edited=False
+                                    ))
+                            except json.JSONDecodeError:
+                                continue
 
-                    if qa_entries: return qa_entries
+                    if qa_entries:
+                        print(f"✅ Successfully parsed {len(qa_entries)} Q&A entries")
+                        return qa_entries
+                    
                     print(f"[WARN] No valid Q&A parsed. Retrying...")
                     if attempt < max_retries - 1:
                         await asyncio.sleep(retry_delay)
