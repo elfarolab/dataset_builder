@@ -14,7 +14,7 @@ server:
 llama_server:
   url: "http://REPLACE_ME_LAN_IP"
   timeout: 800
-  max_tokens: 8000
+  max_tokens: 20000
   temperature: 0.6
   top_p: 0.95
   name: "llm"
@@ -26,10 +26,15 @@ paths:
   state_file: ".review_state.json"
 
 processing:
-  chunk_size: 1500
-  qa_per_chunk: 5
-  batch_delay: 6.0  # seconds between chunks
+  chunk_size: 3000
+  qa_per_chunk: 10
+  batch_delay: 8.0  # seconds between chunks
   image_qa_per_image: 3
   enable_multimodal: true
   debug_print: false
+  semantic_chunking: true
+  semantic_batch_size: 60
+  semantic_overlap: 10
+  max_chunk_tokens: 16000 # if too high -> lost-in-the-middle effect
+  force_doc_type: ""
 

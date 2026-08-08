@@ -28,7 +28,7 @@ Build accurate, actionable training data for domain-specific AI assistants. This
 - **Web Review Interface**: Browser-based UI to inspect, edit, enable/disable, and mark Q&A entries as reviewed before export
 - **State Persistence**: Saves progress to `.review_state.json`; resume interrupted runs without reprocessing unchanged files
 - **Smart Resumption**: Tracks file modification times; skips already-processed documents unless modified or explicitly selected
-- **Chunked Processing**: Splits large documents into manageable chunks for reliable LLM context window usage
+- **Semantic Chunking & LITM Mitigation**: Uses an LLM-driven approach to detect topic boundaries in documents before Q&A generation, producing semantically coherent chunks. Splits large documents into manageable chunks for reliable LLM context window usage
 - **Selective Export**: Choose which sources to export; only reviewed & enabled entries are included in the final JSONL
 
 ## 📋 Requirements
@@ -65,36 +65,7 @@ Build accurate, actionable training data for domain-specific AI assistants. This
    - This command above is a generic example, customize the command with your llama-server custom options.
 
 6. **Configure the application:**
-   Edit `config.yaml` to match your setup:
-   ```yaml
-   app:
-     name: "Dataset Builder"
-     subtitle: "Review and refine AI training data from your documents"
-     persona: "expert AI assistant"
-     audience: "general public"
-
-   llama_server:
-     url: "http://<LAN IP>:8088"
-     timeout: 120
-     max_tokens: 5000
-     temperature: 0.5
-     top_p: 0.9
-
-   paths:
-     pdf_dir: "pdf"
-     web_dir: "web"
-     result_dir: "result"
-     state_file: ".review_state.json"
-
-   processing:
-     chunk_size: 2500
-     qa_per_chunk: 5
-     batch_delay: 3.0
-     image_qa_per_image: 3
-     enable_multimodal: true
-   ```
-   Notes:
-   - This sample above is generic, please use the provided config.yaml file as reference.
+   Edit `config.yaml` to match your setup.
 
 7. **Create input directories:**
    ```bash
@@ -137,12 +108,13 @@ Build accurate, actionable training data for domain-specific AI assistants. This
 ## 📊 How It Works
 
 ```
-PDF/TXT files → Text + table extraction → Chunking → Streaming LLM Q&A generation → Web review → JSONL export
+PDF/TXT files → Text + table extraction → Semantic topic boundary detection (LLM) → Overlap-aware chunking → Streaming LLM Q&A generation → Web review → JSONL export
 ```
 
 - **Text extraction**: Uses `pdfplumber` to read paragraphs and structured tables; tables are converted to tab-separated format with markers for structural awareness.
 - **Image extraction**: Renders PDF pages containing raster/vector graphics into optimized PNGs (max 1024px) for vision LLMs.
-- **Chunking**: Large documents are split by paragraphs into configurable chunks to fit model context windows.
+- **Semantic chunking**: Before Q&A generation, paragraphs are numbered and sent to the LLM in batches to identify indices where topics shift. Boundaries are merged, validated, and used to split text into semantically coherent chunks. An overlap tail (default 1500 chars) is carried from the end of each chunk to the start of the next, mitigating the Lost-In-The-Middle effect where models lose context from the middle of long sequences.
+- **Document type detection**: Heuristics analyze structural patterns (page markers, Q&A patterns, section numbers, markdown headers) to provide the LLM with a document-type hint, improving boundary accuracy for slides, transcripts, reports, and articles.
 - **Q&A generation**: Each chunk/image is sent via SSE streaming. Cancellation flags are checked per-token, allowing instant stop without waiting for timeouts.
 - **Response parsing**: Handles both native llama.cpp and OpenAI-compatible formats; automatically strips reasoning/thinking tags (`<thinking>`, `<think>`, etc.) before JSONL extraction.
 - **State management**: Tracks processed files, modification times, and review status; smart resumption skips unchanged content.
@@ -171,16 +143,21 @@ dataset_builder/
 | `GET` | `/` | Web review interface |
 | `GET` | `/api/config` | Returns app name, subtitle, persona, audience |
 | `GET` | `/api/stats` | Processing statistics & counts |
+| `GET` | `/api/debug/state` | Debug endpoint: state inspection (entry count, sample entry, field checks) |
 | `GET` | `/api/available-sources` | Lists all files on disk with processing status |
-| `POST` | `/api/process` | Triggers document processing (accepts source selection) |
+| `POST` | `/api/process` | Triggers document processing (accepts source selection & images-only toggle) |
 | `GET` | `/api/processing-status` | Real-time progress, queue, and cancellation state |
-| `POST` | `/api/cancel-processing` | Instantly stops streaming generation |
-| `GET` | `/api/entries?page=N&per_page=20` | Paginated Q&A entries (filter by `source_file`) |
-| `POST` | `/api/entries/{id}` | Update content, toggle enable/review status |
+| `POST` | `/api/cancel-processing` | Instantly stops streaming generation (supports per-source or global cancel) |
+| `GET` | `/api/entries?page=N&per_page=20&source_file=X` | Paginated Q&A entries with optional source filter |
+| `POST` | `/api/entries/{id}` | Update content, toggle enable/review status for a single entry |
+| `POST` | `/api/entries/mark-reviewed` | Bulk mark multiple entries as reviewed (accepts JSON body with `ids` array) |
 | `POST` | `/api/export` | Export selected reviewed entries to JSONL |
 | `GET` | `/api/llama-status` | Check backend connectivity |
 | `POST` | `/api/sources/url` | Download PDF from URL into `pdf/` |
 | `POST` | `/api/sources/text` | Save pasted text into `web/` |
+| `DELETE` | `/api/sources/{source_file}` | Remove all Q&A entries for a source file, resetting its processing status |
+| `POST` | `/api/sources/{source_file}/mark-all-reviewed` | Mark all Q&A entries in a given source as reviewed at once |
+
 
 ## 📝 Best Practices: The `Input (Context)` Field
 
@@ -210,6 +187,11 @@ If you leave `input` empty, it's simply omitted or rendered as blank. This is pe
 
 ## ⚙️ Configuration Tips
 
+- **`semantic_chunking`**: Set to `false` to fall back to simple character-based chunking. Default `true`.
+- **`semantic_batch_size`**: Number of paragraphs sent per LLM boundary-detection call. Increase for fewer calls but higher context usage. Default 60.
+- **`semantic_overlap`**: Number of paragraphs carried over between batches during boundary detection to avoid missing shifts at batch edges. Default 10.
+- **`max_chunk_tokens`**: Target token budget per final chunk (converted to chars internally). Default 16000 (~57K chars).
+- **`force_doc_type`**: Override auto-detection with one of: `slides`, `article`, `report`, `transcript`. Leave empty for auto.
 - **`app.persona` & `app.audience`**: Controls system prompt tone. Change to `"medical researcher"` / `"clinicians"` for healthcare, `"legal analyst"` / `"attorneys"` for law, etc.
 - **`chunk_size`**: Reduce for smaller context windows; increase for longer documents. Default 2500 chars works well for 8K+ context models.
 - **`qa_per_chunk`**: Number of pairs requested per chunk. Models may generate fewer if content is thin.

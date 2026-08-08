@@ -49,6 +49,7 @@ with open("prompts.yaml", "r") as f:
 TEXT_QA_TEMPLATE = string.Template(prompt_config["text_qa_prompt"])
 IMAGE_QA_TEMPLATE = string.Template(prompt_config["image_qa_prompt"])
 IMAGE_CONTEXT_TEMPLATE = string.Template(prompt_config["image_context_prompt"])
+SEMANTIC_CHUNK_TEMPLATE = string.Template(prompt_config["semantic_chunk_prompt"])
 
 
 @asynccontextmanager
@@ -632,6 +633,319 @@ def extract_text_from_file(file_path: str) -> str:
     with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
         return f.read()
 
+def detect_document_type(text: str, filename: str) -> str:
+    """Auto-detect document type from structural patterns for prompt hinting."""
+    page_markers = re.findall(r'\[PAGE \d+\]', text)
+    paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+
+    if page_markers and paragraphs:
+        avg_para_length = sum(len(p) for p in paragraphs) / len(paragraphs)
+        if avg_para_length < 300 and len(page_markers) > 5:
+            return """
+  DOCUMENT TYPE HINT: This appears to be a slide deck or presentation export.
+  - Each slide may contain brief bullet points or short statements
+  - Group related slides together (e.g., 2-3 slides on the same subtopic)
+  - Split when the visual topic clearly changes (new chart, new concept)"""
+
+    qa_pattern = re.compile(r'(?:Q:|A:|\?|Answer:|Question:)', re.IGNORECASE)
+    if len(qa_pattern.findall(text)) > 10:
+        return """
+  DOCUMENT TYPE HINT: This appears to be a transcript or Q&A format.
+  - Topic shifts often occur between different questions or speakers
+  - Group related exchanges together"""
+
+    section_pattern = re.compile(r'^\d+[\.\)]\s+[A-Z]', re.MULTILINE)
+    if len(section_pattern.findall(text)) > 3:
+        return """
+  DOCUMENT TYPE HINT: This appears to be a structured report or paper.
+  - Section numbers indicate major topic boundaries
+  - Split at section changes, keep subsections together"""
+
+    header_pattern = re.compile(r'^#{1,6}\s+', re.MULTILINE)
+    if len(header_pattern.findall(text)) > 2:
+        return """
+  DOCUMENT TYPE HINT: This appears to be a markdown-formatted article.
+  - Headers indicate topic boundaries
+  - Group content under the same header together"""
+
+    return """
+  DOCUMENT TYPE HINT: No clear document structure detected. Split based purely on semantic topic shifts."""
+
+async def _detect_topic_boundaries(batch_text: str, start_index: int, global_count: int) -> List[int]:
+    """Ask LLM to identify paragraph indices where topic shifts occur.
+    Uses streaming pattern matching generate_qa_from_text."""
+    verbose = config.get("processing", {}).get("debug_print", False)
+    MAX_ANALYSIS_CHARS = 25000
+
+    if len(batch_text) > MAX_ANALYSIS_CHARS:
+        batch_text = batch_text[:MAX_ANALYSIS_CHARS]
+        batch_text = batch_text.rsplit('\n\n', 1)[0] + "\n\n"
+
+    numbered_paras = []
+    for i, para in enumerate(batch_text.split('\n\n')):
+        if para.strip():
+            numbered_paras.append(f"[P{start_index + i}] {para.strip()}")
+
+    numbered_text = "\n\n".join(numbered_paras)
+
+    # Determine doc type hint
+    force_type = config.get("processing", {}).get("force_doc_type", "")
+    if force_type:
+        type_map = {
+            "slides": """
+  DOCUMENT TYPE HINT: This is a slide deck. Group related slides, split on topic changes.""",
+            "article": """
+  DOCUMENT TYPE HINT: This is an article. Split at major topic shifts, keep examples together.""",
+            "report": """
+  DOCUMENT TYPE HINT: This is a structured report. Split at section boundaries.""",
+            "transcript": """
+  DOCUMENT TYPE HINT: This is a transcript. Group related Q&A exchanges together."""
+        }
+        doc_hint = type_map.get(force_type, "")
+    else:
+        doc_hint = detect_document_type(batch_text, "")
+
+    prompt = SEMANTIC_CHUNK_TEMPLATE.safe_substitute(
+        persona=PERSONA,
+        audience=AUDIENCE,
+        doc_type_hint=doc_hint,
+        numbered_text=numbered_text
+    )
+
+    if verbose:
+        print(f"\n🐛 [DEBUG] SEMANTIC CHUNK PROMPT (first 2000 chars):\n{prompt[:2000]}...\n")
+
+    max_retries = 3
+    retry_delay = 5
+
+    for attempt in range(max_retries):
+        if should_cancel_all:
+            return []
+
+        try:
+            async with httpx.AsyncClient(timeout=LLAMA_TIMEOUT * 2) as client:
+                payload = {
+                    "model": LLAMA_MODEL_NAME,
+                    "prompt": prompt,
+                    "max_tokens": 3000,
+                    "temperature": 0.1,
+                    "top_p": 0.9,
+                    "stop": ["\n\n\n"],
+                    "stream": True
+                }
+
+                print(f"Calling llama server for topic boundaries (attempt {attempt + 1}/{max_retries})...")
+                async with client.stream("POST", f"{LLAMA_SERVER_URL}/v1/completions", json=payload) as response:
+                    if response.status_code not in [200, 201]:
+                        print(f"Error from llama server: {response.text[:500]}")
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(retry_delay)
+                            retry_delay *= 2
+                        continue
+
+                    content = ""
+                    raw_lines_debug = []
+                    try:
+                        async for line in response.aiter_lines():
+                            if should_cancel_all:
+                                print(f"🛑 Cancelled boundary detection")
+                                break
+
+                            if not line or line.startswith(":"):
+                                continue
+
+                            if verbose:
+                                raw_lines_debug.append(line[:200])
+
+                            if line.startswith("data: "):
+                                data = line[6:].strip()
+                                if data == "[DONE]":
+                                    break
+                                try:
+                                    chunk = json.loads(data)
+                                    if "choices" in chunk:
+                                        choice = chunk["choices"][0]
+                                        delta = choice.get("delta", {})
+                                        content += delta.get("content", "") or ""
+                                        if "text" in choice:
+                                            content += choice["text"] or ""
+                                    elif "content" in chunk:
+                                        content += chunk["content"] or ""
+                                except json.JSONDecodeError as e:
+                                    if verbose:
+                                        print(f"   ⚠️ JSON parse error on line: {line[:150]}")
+                                    continue
+
+                    except asyncio.CancelledError:
+                        print(f"🛑 Stream cancelled for boundary detection")
+                        return []
+                    finally:
+                        await response.aclose()
+
+                    # === DEBUG: Print raw response if verbose ===
+                    if verbose:
+                        print(f"\n{'='*60}")
+                        print(f"🔍 RAW BOUNDARY RESPONSE FROM LLAMA ({len(content)} chars accumulated)")
+                        print(f"   Total SSE lines received: {len(raw_lines_debug)}")
+                        print(f"{'='*60}")
+                        if not content:
+                            print("⚠️ WARNING: No content was accumulated!")
+                            print("First 10 raw SSE lines:")
+                            for i, raw_line in enumerate(raw_lines_debug[:10]):
+                                print(f"   [{i}] {raw_line}")
+                        else:
+                            print(f"Accumulated content ({len(content)} chars):")
+                            print(content)
+                        print(f"{'='*60}\n")
+
+                    # === CLEAN RESPONSE (exact same pattern as generate_qa_from_text) ===
+                    content_cleaned = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL | re.IGNORECASE)
+                    content_cleaned = re.sub(r'<thinking>.*?</thinking>', '', content_cleaned, flags=re.DOTALL | re.IGNORECASE)
+                    content_cleaned = re.sub(r'^```(?:jsonl|json)?\s*\n?', '', content_cleaned, flags=re.MULTILINE)
+                    content_cleaned = re.sub(r'\n?```\s*$', '', content_cleaned, flags=re.MULTILINE)
+
+                    if verbose:
+                        print(f"🧹 Cleaned content ({len(content_cleaned)} chars):")
+                        print(content_cleaned)
+                        print()
+
+                    # === PARSE JSON ARRAY ===
+                    json_match = re.search(r'\[\s*\d+(\s*,\s*\d+)*\s*\]', content_cleaned)
+                    if json_match:
+                        try:
+                            boundaries = json.loads(json_match.group(0))
+                            if verbose:
+                                print(f"✅ Found boundaries at paragraphs: {boundaries}")
+                            return boundaries
+                        except json.JSONDecodeError as e:
+                            if verbose:
+                                print(f"   ⚠️ JSON parse error: {e}")
+
+                    # Fallback: extract paragraph indices
+                    numbers = re.findall(r'\b(\d+)\b', content_cleaned)
+                    valid_boundaries = [int(n) for n in numbers if start_index < int(n) < global_count]
+                    if valid_boundaries:
+                        unique = list(dict.fromkeys(valid_boundaries))
+                        if verbose:
+                            print(f"   → Fallback boundaries: {unique}")
+                        return unique
+
+                    print(f"⚠️ No valid boundaries parsed. Retrying...")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(retry_delay)
+                        retry_delay *= 2
+
+        except httpx.ReadTimeout:
+            print(f"Read timeout on boundary detection attempt {attempt + 1}/{max_retries}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 2
+        except httpx.ConnectError as e:
+            print(f"Connection error on boundary detection: {e}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 2
+
+    return []
+
+async def semantic_chunk_text(text: str, filename: str, max_chunk_tokens: int = 16000) -> List[str]:
+    """LLM-driven semantic chunking for unstructured text."""
+    if not text or len(text.strip()) < 100:
+        return []
+
+    paragraphs = [p.strip() for p in re.split(r'\n\s*\n', text) if p.strip()]
+    if not paragraphs:
+        return [text.strip()]
+
+    batch_size = config.get("processing", {}).get("semantic_batch_size", 60)
+    overlap = config.get("processing", {}).get("semantic_overlap", 10)
+
+    print(f"📝 Found {len(paragraphs)} paragraphs, running semantic chunking...")
+
+    all_boundaries = [0]
+    batch_start = 0
+
+    while batch_start < len(paragraphs):
+        batch_end = min(batch_start + batch_size, len(paragraphs))
+        actual_start = max(0, batch_start - overlap) if batch_start > 0 else 0
+        batch_paragraphs = paragraphs[actual_start:batch_end]
+        batch_text = "\n\n".join(batch_paragraphs)
+
+        if len(batch_text) < 200:
+            batch_start = batch_end
+            continue
+
+        local_boundaries = await _detect_topic_boundaries(batch_text, actual_start, len(paragraphs))
+        for b in local_boundaries:
+            if b not in all_boundaries and 0 < b < len(paragraphs):
+                all_boundaries.append(b)
+
+        batch_start = batch_end
+
+    all_boundaries.sort()
+
+    valid_boundaries = sorted(set(
+        b for b in all_boundaries 
+        if 0 <= b < len(paragraphs)
+    ))
+    if not valid_boundaries:
+        valid_boundaries = [0]
+    all_boundaries = valid_boundaries
+    # ==================================
+
+    raw_chunks = []
+    for i in range(len(all_boundaries) - 1):
+        chunk_paragraphs = paragraphs[all_boundaries[i]:all_boundaries[i + 1]]
+        raw_chunks.append("\n\n".join(chunk_paragraphs))
+
+    raw_chunks = []
+    for i in range(len(all_boundaries) - 1):
+        chunk_paragraphs = paragraphs[all_boundaries[i]:all_boundaries[i + 1]]
+        raw_chunks.append("\n\n".join(chunk_paragraphs))
+    if all_boundaries[-1] < len(paragraphs):
+        raw_chunks.append("\n\n".join(paragraphs[all_boundaries[-1]:]))
+
+    OVERLAP_CHARS = 1500
+    chunk_max_chars = int(max_chunk_tokens * 3.5)
+
+    # Replace your final chunking loop with this:
+    final_chunks = []
+    current_chunk = ""
+    
+    for chunk_text in raw_chunks:
+        # If the incoming chunk alone exceeds the limit, split it by paragraphs
+        if len(chunk_text) > chunk_max_chars:
+            if current_chunk.strip():
+                final_chunks.append(current_chunk.strip())
+            
+            paras = chunk_text.split('\n\n')
+            temp_chunk = ""
+            for p in paras:
+                if len(temp_chunk) + len(p) + 2 > chunk_max_chars:
+                    final_chunks.append(temp_chunk.strip())
+                    temp_chunk = p
+                else:
+                    temp_chunk += (p + "\n\n" if temp_chunk else p)
+            if temp_chunk.strip():
+                current_chunk = temp_chunk[-OVERLAP_CHARS:] if len(temp_chunk) > OVERLAP_CHARS else ""
+            continue
+
+        # Normal concatenation logic
+        if len(current_chunk) + len(chunk_text) + 2 <= chunk_max_chars:
+            current_chunk += "\n\n" + chunk_text
+        else:
+            final_chunks.append(current_chunk.strip())
+            overlap_tail = current_chunk[-OVERLAP_CHARS:] if len(current_chunk) > OVERLAP_CHARS else ""
+            current_chunk = overlap_tail + "\n\n" + chunk_text
+
+    if current_chunk.strip():
+        final_chunks.append(current_chunk.strip())
+
+    print(f"✅ Semantic chunking complete: {len(final_chunks)} chunks from {len(paragraphs)} paragraphs")
+    for i, c in enumerate(final_chunks):
+        print(f"   Chunk {i+1}: ~{len(c)//4} tokens, {len(c)} chars")
+
+    return final_chunks
 
 def chunk_text(text: str, max_length: int = 2500) -> List[str]:
     """Split text into chunks for LLM processing"""
@@ -935,7 +1249,15 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
                 if filename not in (images_only_sources or set()):
                     text = extract_text_from_pdf(filepath) if is_pdf else extract_text_from_file(filepath)
                     if len(text.strip()) >= 100:
-                        chunks = chunk_text(text, max_length=CHUNK_SIZE)
+                        use_semantic = config.get("processing", {}).get("semantic_chunking", True)
+                        if use_semantic and len(text.strip()) > 500:
+                            chunks = await semantic_chunk_text(
+                                text,
+                                filename=filename,
+                                max_chunk_tokens=config.get("processing", {}).get("max_chunk_tokens", 16000)
+                            )
+                        else:
+                            chunks = chunk_text(text, max_length=CHUNK_SIZE)
                         total_chunks = len(chunks)
                         print(f"  Text split into {total_chunks} chunks")
 
