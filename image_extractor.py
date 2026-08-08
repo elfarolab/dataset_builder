@@ -7,7 +7,7 @@ import os
 import re
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
-import fitz
+import pymupdf
 from PIL import Image
 
 
@@ -16,7 +16,7 @@ def extract_images_from_pdf(pdf_path: str) -> List[Dict]:
     images = []
     
     try:
-        doc = fitz.open(pdf_path)
+        doc = pymupdf.open(pdf_path)
         print(f"  [INFO] PDF has {len(doc)} pages")
 
         for page_num in range(len(doc)):
@@ -33,7 +33,7 @@ def extract_images_from_pdf(pdf_path: str) -> List[Dict]:
            
             if has_raster or has_vector:
                 zoom = 1.0
-                mat = fitz.Matrix(zoom, zoom)
+                mat = pymupdf.Matrix(zoom, zoom)
                 pix = page.get_pixmap(matrix=mat)
 
                 # Resize to max 1024x1024 (standard for vision LLMs)
