@@ -973,11 +973,15 @@ def chunk_text(text: str, max_length: int = 2500) -> List[str]:
 
 async def generate_qa_from_text(text_chunk: str, source_file: str, chunk_index: int) -> List[QAEntry]:
     verbose = config.get("processing", {}).get("debug_print", False)
-    
+   
+    # Scale Q&A count by chunk length — no point asking for 10 from 300 chars
+    chunk_chars = len(text_chunk.strip())
+    effective_qa = max(1, min(QA_PER_CHUNK, int(chunk_chars / 400)))
+ 
     prompt = TEXT_QA_TEMPLATE.safe_substitute(
         persona=PERSONA,
         text_chunk=text_chunk,
-        qa_per_chunk=QA_PER_CHUNK,
+        qa_per_chunk=effective_qa,
         audience=AUDIENCE
     )
     if verbose:

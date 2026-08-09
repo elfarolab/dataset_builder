@@ -1,7 +1,8 @@
 # test_images.py
-import fitz
+import pymupdf
+
 pdf_path = "../pdf/enso_evolution-status-fcsts-web.pdf"
-doc = fitz.open(pdf_path)
+doc = pymupdf.open(pdf_path)
 print(f"PDF has {len(doc)} pages")
 for i in range(min(3, len(doc))):
     page = doc[i]

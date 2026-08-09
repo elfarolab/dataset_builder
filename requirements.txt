@@ -8,3 +8,5 @@ httpx
 pyyaml
 pymupdf
 certifi
+pytest
+pytest-asyncio
