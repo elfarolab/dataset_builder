@@ -12,6 +12,8 @@ My TODO list right now has 10 entries.
 
 A web-based tool for creating high-quality AI training datasets from documents (PDFs and text files) using a local llama.cpp backend. Extract text, generate Q&A pairs, review them in a browser interface, and export clean JSONL datasets ready for fine-tuning.
 
+![Main page of the WEB UI](images/webui.png)
+
 > 💡 **Historical Note:** This tool was originally developed to build instruction-following datasets for climate change AI assistants. The architecture is now fully generic and can be customized for any domain (medical, legal, technical, educational, etc.) by editing `config.yaml`.
 
 ## 🎯 Purpose
