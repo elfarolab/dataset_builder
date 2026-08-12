@@ -8,6 +8,7 @@ from typing import List, Dict, Optional
 from pathlib import Path
 import re
 import string
+import hashlib
 
 import asyncio
 import pdfplumber
@@ -63,7 +64,9 @@ app = FastAPI(title=APP_NAME, lifespan=lifespan)
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Configuration from config.yaml
+
+# Configuration keys ----------------------------------------------------------
+
 LLAMA_SERVER_URL = config["llama_server"]["url"]
 LLAMA_TIMEOUT = config["llama_server"].get("timeout", 120)
 LLAMA_MAX_TOKENS = config["llama_server"].get("max_tokens", 5000)
@@ -86,7 +89,7 @@ for d in [PDF_DIR, WEB_DIR, RESULT_DIR]:
     os.makedirs(d, exist_ok=True)
 
 
-# Globals ------------------
+# Globals ---------------------------------------------------------------------
 
 
 # Global state
@@ -149,97 +152,7 @@ class ProcessRequest(BaseModel):
     images_only: Optional[List[str]] = None
 
 
-# Functions ----------------
-
-@app.post("/api/test/reset")
-async def reset_test_state():
-    """Only for testing. Clears in-memory state and state file."""
-    global processed_documents, is_processing, processing_state
-    processed_documents = []
-    is_processing = False
-    processing_state = {
-        "is_processing": False, "current_source": None, "progress_percent": 0,
-        "queue": [], "completed": [], "phase": None,
-        "text_chunks_completed": 0, "text_chunks_total": 0,
-        "images_completed": 0, "images_total": 0,
-    }
-    if os.path.exists(STATE_FILE):
-        os.remove(STATE_FILE)
-    return {"status": "reset"}
-
-
-@app.get("/api/processing-status")
-async def get_processing_status():
-    """Return current processing state for frontend polling"""
-    return processing_state
-
-@app.post("/api/cancel-processing")
-async def cancel_processing(req: dict = None):
-    global should_cancel_current, should_cancel_all
-    req = req or {}
-
-    if req.get("all"):
-        should_cancel_all = True
-        print("🛑 Global cancellation flag set")
-    elif req.get("current"):
-        should_cancel_current = True
-        print("🛑 Current source cancellation flag set")
-
-    # No /abort call needed. Cancellation is handled inside the streaming loops.
-    return {"status": "cancelled"}
-
-
-@app.get("/api/available-sources")
-async def get_available_sources():
-    """Get ALL source files on disk (processed and unprocessed) with their status"""
-    sources = []
-
-    # Scan PDF directory
-    for filename in os.listdir(PDF_DIR):
-        if filename.lower().endswith('.pdf'):
-            filepath = os.path.join(PDF_DIR, filename)
-            
-            # Count existing Q&A entries for this file
-            file_entries = [e for e in processed_documents if e.source_file == filename]
-            total_qa = len(file_entries)
-            reviewed_qa = sum(1 for e in file_entries if getattr(e, 'reviewed', False))
-            
-            sources.append({
-                "filename": filename,
-                "type": "PDF",
-                "exists": True,
-                "total_qa": total_qa,
-                "reviewed_qa": reviewed_qa,
-                "is_processed": total_qa > 0,
-            })
-
-    # Scan text directory
-    for filename in os.listdir(WEB_DIR):
-        if filename.lower().endswith('.txt'):
-            filepath = os.path.join(WEB_DIR, filename)
-            
-            file_entries = [e for e in processed_documents if e.source_file == filename]
-            total_qa = len(file_entries)
-            reviewed_qa = sum(1 for e in file_entries if getattr(e, 'reviewed', False))
-            
-            sources.append({
-                "filename": filename,
-                "type": "Text",
-                "exists": True,
-                "total_qa": total_qa,
-                "reviewed_qa": reviewed_qa,
-                "is_processed": total_qa > 0,
-            })
-
-    # Sort: unprocessed first, then alphabetically
-    sources.sort(key=lambda s: (s["is_processed"], s["filename"]))
-
-    return {
-        "sources": sources,
-        "total": len(sources),
-        "unprocessed": sum(1 for s in sources if not s["is_processed"]),
-        "processed": sum(1 for s in sources if s["is_processed"]),
-    }
+# Functions -------------------------------------------------------------------
 
 async def generate_qa_from_image(image_info: Dict, source_file: str, image_index: int, text_context: str = "") -> List[QAEntry]:
     image_b64 = image_to_base64(image_info["image_bytes"])
@@ -1385,6 +1298,259 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
         save_state()  # Save partial progress before exiting
 
 
+
+# API Endpoints ---------------------------------------------------------------
+
+@app.get("/api/import-files")
+async def list_import_files():
+    """List all .jsonl files available for import from RESULT_DIR"""
+    import time as _time
+
+    files = []
+    if not os.path.isdir(RESULT_DIR):
+        return {"files": [], "total": 0}
+
+    for filename in os.listdir(RESULT_DIR):
+        if not filename.lower().endswith('.jsonl'):
+            continue
+
+        filepath = os.path.join(RESULT_DIR, filename)
+        if not os.path.isfile(filepath):
+            continue
+
+        # Count entries and validate format
+        entry_count = 0
+        valid_count = 0
+        invalid_lines = []
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                for line_num, line in enumerate(f, 1):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    entry_count += 1
+                    try:
+                        data = json.loads(line)
+                        if "instruction" in data and "output" in data:
+                            valid_count += 1
+                        else:
+                            invalid_lines.append(line_num)
+                    except json.JSONDecodeError:
+                        invalid_lines.append(line_num)
+        except Exception as e:
+            return {
+                "files": [],
+                "total": 0,
+                "error": f"Could not read {filename}: {e}"
+            }
+
+        stat = os.stat(filepath)
+        mtime = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M")
+
+        files.append({
+            "filename": filename,
+            "size_bytes": stat.st_size,
+            "size_human": f"{stat.st_size / 1024:.1f} KB" if stat.st_size < 1_048_576 else f"{stat.st_size / 1_048_576:.1f} MB",
+            "entry_count": entry_count,
+            "valid_entries": valid_count,
+            "invalid_lines": len(invalid_lines),
+            "modified": mtime,
+            "is_valid": len(invalid_lines) == 0 and valid_count > 0,
+        })
+
+    # Sort by modification time descending (newest first)
+    files.sort(key=lambda f: os.path.getmtime(os.path.join(RESULT_DIR, f["filename"])), reverse=True)
+
+    return {
+        "files": files,
+        "total": len(files),
+    }
+
+
+@app.post("/api/import")
+async def import_dataset(req: dict):
+    """Import a previously exported JSONL file and add entries to processed_documents"""
+    global processed_documents
+
+    filename = req.get("filename", "").strip()
+    if not filename.lower().endswith('.jsonl'):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    # Security: prevent path traversal
+    safe_filename = os.path.basename(filename)
+    filepath = os.path.join(RESULT_DIR, safe_filename)
+
+    if not os.path.isfile(filepath):
+        raise HTTPException(status_code=404, detail=f"File not found: {safe_filename}")
+
+    imported_entries = []
+    skipped_lines = []
+
+    with open(filepath, 'r', encoding='utf-8') as f:
+        for line_num, line in enumerate(f, 1):
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                data = json.loads(line)
+            except json.JSONDecodeError:
+                skipped_lines.append(line_num)
+                continue
+
+            # Sanitize: ensure required fields exist and are strings
+            instruction = str(data.get("instruction", "")).strip()
+            output = str(data.get("output", "")).strip()
+            input_text = str(data.get("input", "")).strip()
+
+            if not instruction or not output:
+                skipped_lines.append(line_num)
+                continue
+
+            # Truncate overly long fields to prevent abuse
+            instruction = instruction[:10000]
+            output = output[:50000]
+            input_text = input_text[:50000]
+
+            # Generate a unique ID based on content hash to avoid duplicates
+            content_hash = hashlib.md5(
+                f"{instruction}||{input_text}||{output}".encode('utf-8')
+            ).hexdigest()[:12]
+
+            entry_id = f"imported_{safe_filename.replace('/', '_').replace('.', '_')}_{line_num}_{content_hash}"
+
+            # Check for duplicate by ID (already imported in this session)
+            if any(e.id == entry_id for e in processed_documents):
+                continue
+
+            imported_entries.append(QAEntry(
+                id=entry_id,
+                instruction=instruction,
+                input=input_text,
+                output=output,
+                source_file=safe_filename,
+                chunk_index=-1,  # -1 indicates imported / image-derived
+                enabled=True,
+                edited=False,
+                reviewed=False,  # New imports start as not reviewed
+            ))
+
+    if not imported_entries:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No valid entries found in {safe_filename}. "
+                   f"{len(skipped_lines)} lines were skipped due to format errors."
+        )
+
+    # Add new entries
+    original_count = len(processed_documents)
+    processed_documents.extend(imported_entries)
+    new_count = len(processed_documents) - original_count
+
+    save_state()
+
+    return {
+        "status": "success",
+        "filename": safe_filename,
+        "imported": new_count,
+        "skipped": len(skipped_lines),
+        "total_in_file": len(imported_entries) + len(skipped_lines),
+        "message": f"Imported {new_count} entries from {safe_filename}",
+    }
+
+
+@app.post("/api/test/reset")
+async def reset_test_state():
+    """Only for testing. Clears in-memory state and state file."""
+    global processed_documents, is_processing, processing_state
+    processed_documents = []
+    is_processing = False
+    processing_state = {
+        "is_processing": False, "current_source": None, "progress_percent": 0,
+        "queue": [], "completed": [], "phase": None,
+        "text_chunks_completed": 0, "text_chunks_total": 0,
+        "images_completed": 0, "images_total": 0,
+    }
+    if os.path.exists(STATE_FILE):
+        os.remove(STATE_FILE)
+    return {"status": "reset"}
+
+
+@app.get("/api/processing-status")
+async def get_processing_status():
+    """Return current processing state for frontend polling"""
+    return processing_state
+
+
+@app.post("/api/cancel-processing")
+async def cancel_processing(req: dict = None):
+    global should_cancel_current, should_cancel_all
+    req = req or {}
+
+    if req.get("all"):
+        should_cancel_all = True
+        print("🛑 Global cancellation flag set")
+    elif req.get("current"):
+        should_cancel_current = True
+        print("🛑 Current source cancellation flag set")
+
+    # No /abort call needed. Cancellation is handled inside the streaming loops.
+    return {"status": "cancelled"}
+
+
+@app.get("/api/available-sources")
+async def get_available_sources():
+    """Get ALL source files on disk (processed and unprocessed) with their status"""
+    sources = []
+
+    # Scan PDF directory
+    for filename in os.listdir(PDF_DIR):
+        if filename.lower().endswith('.pdf'):
+            filepath = os.path.join(PDF_DIR, filename)
+            
+            # Count existing Q&A entries for this file
+            file_entries = [e for e in processed_documents if e.source_file == filename]
+            total_qa = len(file_entries)
+            reviewed_qa = sum(1 for e in file_entries if getattr(e, 'reviewed', False))
+            
+            sources.append({
+                "filename": filename,
+                "type": "PDF",
+                "exists": True,
+                "total_qa": total_qa,
+                "reviewed_qa": reviewed_qa,
+                "is_processed": total_qa > 0,
+            })
+
+    # Scan text directory
+    for filename in os.listdir(WEB_DIR):
+        if filename.lower().endswith('.txt'):
+            filepath = os.path.join(WEB_DIR, filename)
+            
+            file_entries = [e for e in processed_documents if e.source_file == filename]
+            total_qa = len(file_entries)
+            reviewed_qa = sum(1 for e in file_entries if getattr(e, 'reviewed', False))
+            
+            sources.append({
+                "filename": filename,
+                "type": "Text",
+                "exists": True,
+                "total_qa": total_qa,
+                "reviewed_qa": reviewed_qa,
+                "is_processed": total_qa > 0,
+            })
+
+    # Sort: unprocessed first, then alphabetically
+    sources.sort(key=lambda s: (s["is_processed"], s["filename"]))
+
+    return {
+        "sources": sources,
+        "total": len(sources),
+        "unprocessed": sum(1 for s in sources if not s["is_processed"]),
+        "processed": sum(1 for s in sources if s["is_processed"]),
+    }
+
+
 @app.get("/api/debug/state")
 async def debug_state():
     """Debug endpoint to check state"""
@@ -1820,6 +1986,9 @@ async def get_app_config():
     """Return app configuration for frontend"""
     return {"name": APP_NAME, "subtitle": APP_SUBTITLE}
 
+
+
+# Main ------------------------------------------------------------------------
 
 if __name__ == "__main__":
     import asyncio

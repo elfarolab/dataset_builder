@@ -1044,6 +1044,9 @@
         <button class="btn-primary" id="btnProcess" onclick="processDocuments()">
             📄 Process Documents
         </button>
+        <button class="btn-info" id="btnImport" onclick="openImportModal()">
+            📥 Import Dataset
+        </button>
         <button class="btn-success" id="btnExport" onclick="openExportModal()" disabled>
             💾 Export Dataset
         </button>
@@ -1161,6 +1164,32 @@
                 <p class="modal-hint">Saved into <code>web/</code> as a file named with the current date and time.</p>
             </div>
             <button class="btn-primary" id="btnSaveText" onclick="submitTextSource()">💾 Save Article</button>
+        </div>
+    </div>
+</div>
+
+<!-- Import Modal -->
+<div class="modal-overlay" id="importModalOverlay" onclick="closeImportModalOnOverlay(event)">
+    <div class="modal" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h2>📥 Import Dataset</h2>
+            <button class="modal-close" onclick="closeImportModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <p style="font-size:0.9rem; color:var(--gray-600); margin-bottom:12px;">
+                Select a previously exported JSONL file to import. Entries will be added to your current
+                dataset with source_file set to the imported filename. All entries start as <strong>not reviewed</strong>.
+            </p>
+            <div class="export-sources-list" id="importFilesList">
+                <p style="text-align:center; padding:20px; color:var(--gray-600);">
+                    <span class="spinner"></span> Loading files...
+                </p>
+            </div>
+            <div style="margin-top:16px;">
+                <button class="btn-info" id="btnDoImport" onclick="doImport()" disabled>
+                    📥 Import Selected
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -2064,7 +2093,132 @@
             selectedProcessImagesOnly.delete(filename);
         }
     }
-   
+    
+    // ==================== IMPORT MODAL ====================
+    let importFilesData = [];
+    let selectedImportFile = null;
+
+    async function openImportModal() {
+        selectedImportFile = null;
+        document.getElementById('btnDoImport').disabled = true;
+        document.getElementById('importModalOverlay').classList.add('active');
+        await loadImportFilesList();
+    }
+    
+    function closeImportModal() {
+        document.getElementById('importModalOverlay').classList.remove('active');
+        selectedImportFile = null;
+    }
+    
+    function closeImportModalOnOverlay(e) {
+        if (e.target.id === 'importModalOverlay') closeImportModal();
+    }
+    
+    async function loadImportFilesList() {
+        const list = document.getElementById('importFilesList');
+    
+        try {
+            const res = await fetch('/api/import-files');
+            const data = await res.json();
+            importFilesData = data.files || [];
+    
+            if (data.error) {
+                list.innerHTML = `<p style="color:var(--danger); text-align:center; padding:20px;">${escapeHtml(data.error)}</p>`;
+                return;
+            }
+    
+            if (importFilesData.length === 0) {
+                list.innerHTML = `
+                    <div class="empty-state" style="padding:30px 10px;">
+                        <div class="icon">📭</div>
+                        <h3>No export files found</h3>
+                        <p style="font-size:0.85rem; color:var(--gray-600);">Export a dataset first, then you'll be able to import it here.</p>
+                    </div>`;
+                return;
+            }
+    
+            list.innerHTML = importFilesData.map(file => {
+                const isValid = file.is_valid;
+                const disabledClass = !isValid ? 'disabled' : '';
+                const radioDisabled = !isValid ? 'disabled' : '';
+                const checked = selectedImportFile === file.filename ? 'checked' : '';
+    
+                let statusBadge = '';
+                if (file.invalid_lines > 0) {
+                    statusBadge = `<span style="color:var(--danger); font-size:0.75rem;">⚠ ${file.invalid_lines} invalid lines</span>`;
+                } else {
+                    statusBadge = `<span style="color:var(--success); font-size:0.75rem;">✓ Valid</span>`;
+                }
+    
+                return `
+                    <div class="export-source-item ${disabledClass}" onclick="${isValid ? `selectImportFile('${escapeHtml(file.filename)}')` : ''}">
+                        <input type="radio"
+                               name="importFileRadio"
+                               ${radioDisabled}
+                               ${checked}
+                               onchange="selectImportFile('${escapeHtml(file.filename)}')"
+                               style="accent-color: var(--primary);">
+                        <div style="flex:1;">
+                            <div style="font-weight:600;">${escapeHtml(file.filename)}</div>
+                            <div style="font-size:0.8rem; color:var(--gray-600);">
+                                ${file.size_human} • ${file.valid_entries} valid entries • Modified: ${escapeHtml(file.modified)}
+                                ${statusBadge}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+    
+        } catch (e) {
+            list.innerHTML = `<p style="color:var(--danger); text-align:center; padding:20px;">Error loading files: ${e.message}</p>`;
+        }
+    }
+    
+    function selectImportFile(filename) {
+        selectedImportFile = filename;
+        document.getElementById('btnDoImport').disabled = false;
+    
+        // Update radio buttons visually
+        const radios = document.querySelectorAll('#importFilesList input[name="importFileRadio"]');
+        radios.forEach(radio => {
+            radio.checked = (radio.getAttribute('onchange') || '').includes(`'${filename}'`);
+        });
+    }
+    
+    async function doImport() {
+        if (!selectedImportFile) {
+            showToast('Please select a file to import', 'error');
+            return;
+        }
+    
+        const btn = document.getElementById('btnDoImport');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> Importing...';
+    
+        try {
+            const res = await fetch('/api/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: selectedImportFile })
+            });
+    
+            if (res.ok) {
+                const data = await res.json();
+                showToast(data.message || `Imported ${data.imported} entries ✓`, 'success');
+                closeImportModal();
+                await refreshAll();
+            } else {
+                const error = await res.json().catch(() => ({}));
+                throw new Error(error.detail || 'Import failed');
+            }
+        } catch (e) {
+            showToast('Import failed: ' + e.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '📥 Import Selected';
+        }
+    }
+     
     // Export modal
     function openExportModal() {
         renderExportSourcesList();
