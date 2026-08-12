@@ -35,6 +35,7 @@ processing:
   semantic_chunking: true
   semantic_batch_size: 60
   semantic_overlap: 10
-  max_chunk_tokens: 16000 # if too high -> lost-in-the-middle effect
-  force_doc_type: ""
-
+  max_chunk_tokens: 16000   # if too high-> lost-in-the-middle effect (LITM)
+  force_doc_type: ""        # leave empty for auto
+  max_retries: 3            # number of retries after request failure
+  retry_delay: 0            # seconds of delay after request failure
