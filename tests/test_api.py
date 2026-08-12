@@ -1236,6 +1236,7 @@ class TestFullWorkflowE2E:
         # 3. Process with LLM (uses config timeout)
         print("\n[3/6] Processing with LLM...")
         process_resp = http_client.post("/api/process", json={"sources": [filename]})
+        print(f"   Process response: {process_resp.status_code} - {process_resp.json()}")
         assert process_resp.status_code == 200
         
         final_state = wait_for_processing(http_client)
