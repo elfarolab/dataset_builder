@@ -17,7 +17,7 @@ llama_server:
   max_tokens: 20000
   temperature: 0.6
   top_p: 0.95
-  name: "llm"
+  name: "llm" # model alias name inside llama.cpp router configuration
 
 paths:
   pdf_dir: "pdf"
@@ -28,7 +28,7 @@ paths:
 processing:
   chunk_size: 3000
   qa_per_chunk: 10
-  batch_delay: 8.0  # seconds between chunks
+  batch_delay: 8.0  # seconds between chunks requests
   image_qa_per_image: 3
   enable_multimodal: true
   debug_print: false
