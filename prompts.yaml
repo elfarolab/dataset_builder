@@ -51,24 +51,16 @@ semantic_chunk_prompt: |
   You are an expert text analyst helping build a training dataset for a $persona.
   Target audience: $audience.
 
-  Your task: Identify where MAJOR topic shifts occur in the following text.
-
+  Your task: Identify paragraph indices where MAJOR topic shifts occur.
+  
   RULES:
-  - Scan the ENTIRE text carefully. Do not skip middle sections.
-  - Return ONLY a JSON array of paragraph indices where a NEW topic begins
-  - If multiple shifts occur, list them in ascending order.
-  - If no clear shifts exist, return [].
-  - A topic shift occurs when the text moves to a significantly different subject, concept, or theme
-  - Do NOT split on minor variations, examples, or elaborations of the same idea
-  - If the entire batch covers one coherent topic, return an empty array []
+  - Return ONLY a JSON array of integers. Example: [6, 14] or []
+  - If the entire batch covers one coherent topic, return []
+  - Do NOT include explanations, markdown, or prose. Only the JSON array.
   $doc_type_hint
-
-  EXAMPLE:
-  If P0-P5 discuss "causes of drought" and P6-P12 discuss "irrigation solutions",
-  return [6] because P6 starts a new topic.
 
   TEXT TO ANALYZE:
   $numbered_text
 
-  Return ONLY the JSON array, nothing else:
+  OUTPUT FORMAT (strict JSON only):
 

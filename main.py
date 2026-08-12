@@ -151,6 +151,23 @@ class ProcessRequest(BaseModel):
 
 # Functions ----------------
 
+@app.post("/api/test/reset")
+async def reset_test_state():
+    """Only for testing. Clears in-memory state and state file."""
+    global processed_documents, is_processing, processing_state
+    processed_documents = []
+    is_processing = False
+    processing_state = {
+        "is_processing": False, "current_source": None, "progress_percent": 0,
+        "queue": [], "completed": [], "phase": None,
+        "text_chunks_completed": 0, "text_chunks_total": 0,
+        "images_completed": 0, "images_total": 0,
+    }
+    if os.path.exists(STATE_FILE):
+        os.remove(STATE_FILE)
+    return {"status": "reset"}
+
+
 @app.get("/api/processing-status")
 async def get_processing_status():
     """Return current processing state for frontend polling"""
@@ -730,8 +747,9 @@ async def _detect_topic_boundaries(batch_text: str, start_index: int, global_cou
                     "max_tokens": 3000,
                     "temperature": 0.1,
                     "top_p": 0.9,
-                    "stop": ["\n\n\n"],
-                    "stream": True
+                    "stop": ["\n\n\n", "[DONE]", "###"],
+                    "stream": True,
+                    "response_format": {"type": "json_object"}
                 }
 
                 print(f"Calling llama server for topic boundaries (attempt {attempt + 1}/{max_retries})...")
@@ -801,8 +819,11 @@ async def _detect_topic_boundaries(batch_text: str, start_index: int, global_cou
                     # === CLEAN RESPONSE (exact same pattern as generate_qa_from_text) ===
                     content_cleaned = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL | re.IGNORECASE)
                     content_cleaned = re.sub(r'<thinking>.*?</thinking>', '', content_cleaned, flags=re.DOTALL | re.IGNORECASE)
-                    content_cleaned = re.sub(r'^```(?:jsonl|json)?\s*\n?', '', content_cleaned, flags=re.MULTILINE)
-                    content_cleaned = re.sub(r'\n?```\s*$', '', content_cleaned, flags=re.MULTILINE)
+                    # Strip ALL markdown code blocks (full & inline)
+                    #content_cleaned = re.sub(r'^```(?:jsonl|json)?\s*\n?', '', content_cleaned, flags=re.MULTILINE)
+                    #content_cleaned = re.sub(r'\n?```\s*$', '', content_cleaned, flags=re.MULTILINE)
+                    content_cleaned = re.sub(r'```(?:json|jsonl)?\s*([\s\S]*?)\s*```', r'\1', content_cleaned)
+                    content_cleaned = re.sub(r'`([^`]*)`', r'\1', content_cleaned) # Strip inline backticks
 
                     if verbose:
                         print(f"🧹 Cleaned content ({len(content_cleaned)} chars):")
@@ -810,13 +831,15 @@ async def _detect_topic_boundaries(batch_text: str, start_index: int, global_cou
                         print()
 
                     # === PARSE JSON ARRAY ===
-                    json_match = re.search(r'\[\s*\d+(\s*,\s*\d+)*\s*\]', content_cleaned)
+                    #json_match = re.search(r'\[\s*\d+(\s*,\s*\d+)*\s*\]', content_cleaned)
+                    json_match = re.search(r'$\s*(?:\d+(?:\s*,\s*\d+)*)?\s*$', content_cleaned)
                     if json_match:
                         try:
                             boundaries = json.loads(json_match.group(0))
                             if verbose:
                                 print(f"✅ Found boundaries at paragraphs: {boundaries}")
-                            return boundaries
+                            #return boundaries
+                            return [b for b in boundaries if 0 < b < len(paragraphs)]
                         except json.JSONDecodeError as e:
                             if verbose:
                                 print(f"   ⚠️ JSON parse error: {e}")
@@ -1002,7 +1025,7 @@ async def generate_qa_from_text(text_chunk: str, source_file: str, chunk_index: 
                     "max_tokens": LLAMA_MAX_TOKENS,
                     "temperature": LLAMA_TEMPERATURE,
                     "top_p": LLAMA_TOP_P,
-                    "stop": ["\n\n\n"],
+                    "stop": ["\n\n\n", "[DONE]", "###"],
                     "stream": True
                 }
 

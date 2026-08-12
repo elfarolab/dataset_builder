@@ -12,7 +12,7 @@ server:
   reload: true
 
 llama_server:
-  url: "http://REPLACE_ME_LAN_IP"
+  url: "http://192.168.1.5:8088"
   timeout: 800
   max_tokens: 20000
   temperature: 0.6
@@ -31,7 +31,7 @@ processing:
   batch_delay: 8.0  # seconds between chunks
   image_qa_per_image: 3
   enable_multimodal: true
-  debug_print: false
+  debug_print: true
   semantic_chunking: true
   semantic_batch_size: 60
   semantic_overlap: 10
