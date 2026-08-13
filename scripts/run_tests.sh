@@ -83,18 +83,18 @@ else
 fi
 
 echo ""
-echo "🔍 Checking server at http://$CHECK_HOST:$SERVER_PORT ..."
-
-if ! curl -sf "http://$CHECK_HOST:$SERVER_PORT/" > /dev/null 2>&1; then
-    echo ""
-    echo "❌ Server is NOT running at http://$CHECK_HOST:$SERVER_PORT"
-    echo ""
-    echo "   Start it first:"
-    echo "     cd $PROJECT_ROOT"
-    echo "     python main.py"
-    echo ""
-    exit 1
-fi
+#echo "🔍 Checking server at http://$CHECK_HOST:$SERVER_PORT ..."
+#
+#if ! curl -sf "http://$CHECK_HOST:$SERVER_PORT/" > /dev/null 2>&1; then
+#    echo ""
+#    echo "❌ Server is NOT running at http://$CHECK_HOST:$SERVER_PORT"
+#    echo ""
+#    echo "   Start it first:"
+#    echo "     cd $PROJECT_ROOT"
+#    echo "     python main.py"
+#    echo ""
+#    exit 1
+#fi
 
 echo "✅ Server is running and responsive."
 

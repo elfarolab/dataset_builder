@@ -869,6 +869,10 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
         print("Processing already in progress, skipping...")
         return
 
+    # Safety: Clear stale cancellation flags from previous test runs
+    app_state.should_cancel_all = False
+    app_state.should_cancel_current = False
+
     app_state.is_processing = True
     enable_multimodal = config.get("processing", {}).get("enable_multimodal", True)
     use_semantic = config.get("processing", {}).get("semantic_chunking", True)
@@ -974,9 +978,9 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
                             app_state.processing_state["completed_units"] = (
                                 app_state.processing_state["text_chunks_completed"] + app_state.processing_state["images_completed"]
                             )
-                            app_state.processing_state["progress_percent"] = int(
+                            app_state.processing_state["progress_percent"] = min(round(
                                 (app_state.processing_state["completed_units"] / max(app_state.processing_state["total_units"], 1)) * 100
-                            )
+                            ), 100)
 
                             if len(new_entries) > 0:
                                 save_state(app_state)
@@ -1023,10 +1027,10 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
                         app_state.processing_state["completed_units"] = (
                             app_state.processing_state["text_chunks_completed"] + app_state.processing_state["images_completed"]
                         )
-                        progress = int(
+                        progress = min(round(
                             (app_state.processing_state["completed_units"] / max(app_state.processing_state["total_units"], 1)) * 100
-                        )
-                        app_state.processing_state["progress_percent"] = min(progress, 100)
+                        ), 100)
+                        app_state.processing_state["progress_percent"] = progress
 
                         if len(new_entries) > 0:
                             save_state(app_state)
@@ -1053,6 +1057,8 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
         app_state.processing_state["is_processing"] = False
         app_state.processing_state["current_source"] = None
         app_state.processing_state["phase"] = None
+        if not app_state.should_cancel_all:
+            app_state.processing_state["progress_percent"] = 100
         app_state.should_cancel_current = False
         app_state.should_cancel_all = False
 
@@ -1173,6 +1179,11 @@ async def import_dataset(req: dict, app_state: AppState = Depends(get_app_state)
 async def reset_test_state(app_state: AppState = Depends(get_app_state)):
     app_state.processed_documents = []
     app_state.is_processing = False
+
+    # CRITICAL: Clear cancellation flags that persist across tests
+    app_state.should_cancel_current = False
+    app_state.should_cancel_all = False
+
     app_state.processing_state = {
         "is_processing": False,
         "current_source": None,
@@ -1185,6 +1196,7 @@ async def reset_test_state(app_state: AppState = Depends(get_app_state)):
         "images_completed": 0,
         "images_total": 0,
     }
+
     if os.path.exists(STATE_FILE): os.remove(STATE_FILE)
     return {"status": "reset"}
 
