@@ -1006,7 +1006,8 @@
     <!-- Processing Panel -->
     <div class="processing-panel" id="processingPanel" style="display:none;">
         <div class="panel-header">
-            <h3>📊 Processing Status</h3>
+            <h3>Processing Status</h3>
+            <span id="processingElapsed" style="margin-left: 12px; font-size: 0.85rem; color: var(--gray-600); font-family: monospace;"></span>
             <button class="btn-danger btn-small stop-all-btn" onclick="cancelProcessing(true)">⛔ Stop All</button>
         </div>
         <div class="sources-list" id="sourcesList">
@@ -2014,7 +2015,27 @@
     function renderProcessingPanel(state) {
         const list = document.getElementById('sourcesList');
         const items = [];
-    
+        const now = Date.now() / 1000;
+        const sourceTimes = state.source_start_times || {};
+
+        // Helper to format seconds -> MM:SS
+        const fmt = (sec) => {
+            if (!sec || sec < 0) return '--:--';
+            const m = Math.floor(sec / 60);
+            const s = Math.floor(sec % 60);
+            return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        };
+
+        // Update overall elapsed time display
+        const elapsedEl = document.getElementById('processingElapsed');
+        if (elapsedEl) {
+            if (state.is_processing && state.start_time) {
+                elapsedEl.textContent = `⏱ ${fmt(now - state.start_time)}`;
+            } else {
+                elapsedEl.textContent = '';
+            }
+        }
+   
         if (state.current_source) {
             items.push({ name: state.current_source, status: 'processing', progress: state.progress_percent });
         }
@@ -2051,15 +2072,22 @@
             } else {
                 statusHtml = `<span style="font-size:0.8rem; color:var(--success);">✅ Done</span>`;
             }
-    
+
+            // Calculate per-file elapsed time
+            const fileStart = sourceTimes[item.name];
+            const fileElapsed = fileStart ? Math.max(0, now - fileStart) : 0;
+            const elapsedStr = fmt(fileElapsed);
+
             return `
                 <div class="source-item">
                     <div class="source-info"><div class="source-name" title="${item.name}">${item.name}</div></div>
+                    <div style="min-width: 56px; text-align: center; font-family: monospace; font-size: 0.8rem; color: var(--gray-600); padding: 0 12px; flex-shrink: 0;">${elapsedStr}</div>
                     ${statusHtml}
                 </div>`;
         }).join('');
     }
- 
+    
+
     // ==================== IMPORT MODAL ====================
     let importFilesData = [];
     let selectedImportFile = null;

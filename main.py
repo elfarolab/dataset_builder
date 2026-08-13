@@ -897,6 +897,8 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
     app_state.processing_state["is_processing"] = True
     app_state.processing_state["total_units"] = 0
     app_state.processing_state["completed_units"] = 0
+    app_state.processing_state["start_time"] = time.time()
+    app_state.processing_state.setdefault("source_start_times", {})
 
     try:
         files_to_skip = set() if selected_sources else get_files_to_skip_from_memory(app_state)
@@ -937,6 +939,7 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
                 continue
 
             app_state.processing_state["current_source"] = filename
+            app_state.processing_state["source_start_times"][filename] = time.time()
 
             if not selected_sources and filename in files_to_skip:
                 print(f"Skipping already processed: {filename}")
@@ -1072,6 +1075,7 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
         app_state.processing_state["is_processing"] = False
         app_state.processing_state["current_source"] = None
         app_state.processing_state["phase"] = None
+        app_state.processing_state["start_time"] = None
         if not app_state.should_cancel_all:
             app_state.processing_state["progress_percent"] = 100
         app_state.should_cancel_current = False
