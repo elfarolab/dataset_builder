@@ -1,11 +1,14 @@
 # prompts.yaml
+
 text_qa_prompt: |
   You are creating a training dataset for a $persona.
 
   Source text:
   $text_chunk
 
-  Create $qa_per_chunk high-quality question-answer pairs based ONLY on this text.
+  Create UP TO $qa_per_chunk high-quality question-answer pairs based ONLY on this text.
+  Generate as many distinct, non-repetitive Q&As as the content supports, up to the maximum of $qa_per_chunk.
+  If the content is brief and doesn't support many questions, produce fewer — but never below 3 unless the text is extremely short.
 
   Requirements:
   - Questions should be practical and specific (not theoretical)
@@ -13,6 +16,7 @@ text_qa_prompt: |
   - Use clear, simple English suitable for $audience
   - Include specific numbers, thresholds, or examples if mentioned in source
   - Focus on actionable information: what to do, what to expect, warning signs
+  - Each Q&A must cover a different fact/concept — no rephrasing the same question
   - Don't truncate URLs of online documentation, if it is too long exclude it
 
   Output ONLY valid JSONL format (one JSON object per line, nothing else):

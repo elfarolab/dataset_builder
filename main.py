@@ -70,8 +70,10 @@ WEB_DIR = config["paths"]["web_dir"]
 RESULT_DIR = config["paths"]["result_dir"]
 STATE_FILE = config["paths"]["state_file"]
 
-CHUNK_SIZE = config["processing"]["chunk_size"]
-QA_PER_CHUNK = config["processing"].get("qa_per_chunk", 5)
+QA_PER_10K_TOKENS = config["processing"].get("qa_per_10k_tokens", 20)
+QA_MIN = config["processing"].get("qa_min", 3)
+QA_MAX = config["processing"].get("qa_max", 50)
+
 BATCH_DELAY = config["processing"].get("batch_delay", 5.0)
 MAX_RETRIES = config.get("processing", {}).get("max_retries", 3)
 RETRY_DELAY = config.get("processing", {}).get("retry_delay", 8)
@@ -443,7 +445,7 @@ async def _detect_topic_boundaries(batch_text: str, start_index: int, global_cou
                     if json_match:
                         try:
                             boundaries = json.loads(json_match.group(0))
-                            if verbose: print(f"✅ Found boundaries at paragraphs: {boundaries}")
+                            if verbose: print(f"Found boundaries at paragraphs: {boundaries}")
                             return [b for b in boundaries if 0 < b < global_count]
                         except json.JSONDecodeError as e:
                             if verbose: print(f"   ⚠️ JSON parse error: {e}")
@@ -476,7 +478,7 @@ async def semantic_chunk_text(text: str, filename: str, max_chunk_tokens: int = 
     batch_size = config.get("processing", {}).get("semantic_batch_size", 60)
     overlap = config.get("processing", {}).get("semantic_overlap", 10)
 
-    print(f"📝 Found {len(paragraphs)} paragraphs, running semantic chunking...")
+    print(f"Found {len(paragraphs)} paragraphs, running semantic chunking...")
 
     all_boundaries = [0]
     batch_start = 0
@@ -546,28 +548,12 @@ async def semantic_chunk_text(text: str, filename: str, max_chunk_tokens: int = 
 
     if current_chunk.strip(): final_chunks.append(current_chunk.strip())
 
-    print(f"✅ Semantic chunking complete: {len(final_chunks)} chunks from {len(paragraphs)} paragraphs")
+    print(f"Semantic chunking complete: {len(final_chunks)} chunks from {len(paragraphs)} paragraphs")
     for i, c in enumerate(final_chunks):
         print(f"   Chunk {i+1}: ~{len(c)//4} tokens, {len(c)} chars")
 
     return final_chunks
 
-def chunk_text(text: str, max_length: int = 2500) -> List[str]:
-    paragraphs = text.split('\n\n')
-    chunks = []
-    current_chunk = ""
-
-    for para in paragraphs:
-        para = para.strip()
-        if not para: continue
-        if len(current_chunk) + len(para) + 2 <= max_length:
-            current_chunk += para + "\n\n"
-        else:
-            if current_chunk: chunks.append(current_chunk.strip())
-            current_chunk = para + "\n\n"
-
-    if current_chunk.strip(): chunks.append(current_chunk.strip())
-    return chunks
 
 async def generate_qa_from_image(image_info: Dict, source_file: str, image_index: int, text_context: str = "", app_state: AppState = None) -> List[QAEntry]:
     image_b64 = image_to_base64(image_info["image_bytes"])
@@ -699,7 +685,7 @@ async def generate_qa_from_image(image_info: Dict, source_file: str, image_index
                             except json.JSONDecodeError: continue
 
                     if qa_entries:
-                        print(f"✅ Successfully parsed {len(qa_entries)} Q&A entries from image")
+                        #print(f"Successfully parsed {len(qa_entries)} Q&A entries from image")
                         return qa_entries
 
                     print(f"[WARN] No valid Q&A parsed from image. Retrying...")
@@ -744,8 +730,8 @@ def get_files_to_skip_from_memory(app_state: AppState):
 
 async def generate_qa_from_text(text_chunk: str, source_file: str, chunk_index: int, app_state: AppState = None) -> List[QAEntry]:
     verbose = config.get("processing", {}).get("debug_print", False)
-    chunk_chars = len(text_chunk.strip())
-    effective_qa = max(1, min(QA_PER_CHUNK, int(chunk_chars / 400)))
+    token_estimate = len(text_chunk.strip()) // 4
+    effective_qa = max(QA_MIN, min(QA_MAX, int(token_estimate / 10_000 * QA_PER_10K_TOKENS)))
 
     prompt = TEXT_QA_TEMPLATE.safe_substitute(persona=PERSONA, text_chunk=text_chunk, qa_per_chunk=effective_qa, audience=AUDIENCE)
     if verbose: print(f"\n🐛 [DEBUG] RAW PROMPT SENT TO LLM (first 2000 chars):\n{prompt[:2000]}...\n")
@@ -757,7 +743,7 @@ async def generate_qa_from_text(text_chunk: str, source_file: str, chunk_index: 
         try:
             async with httpx.AsyncClient(timeout=LLAMA_TIMEOUT * 2) as client:
                 payload = {
-                    "model": "llm", "prompt": prompt, "max_tokens": LLAMA_MAX_TOKENS,
+                    "model": LLAMA_MODEL_NAME, "prompt": prompt, "max_tokens": LLAMA_MAX_TOKENS,
                     "temperature": LLAMA_TEMPERATURE, "top_p": LLAMA_TOP_P,
                     "stop": ["\n\n\n", "[DONE]", "###"], "stream": True
                 }
@@ -857,11 +843,16 @@ async def generate_qa_from_text(text_chunk: str, source_file: str, chunk_index: 
                                     ))
                             except json.JSONDecodeError: continue
 
+                    if len(qa_entries) < QA_MIN and attempt < MAX_RETRIES - 1:
+                        print(f"⚠️ Only {len(qa_entries)} Q&As from image (minimum {QA_MIN}). Retrying...")
+                        await asyncio.sleep(RETRY_DELAY)
+                        continue
+
                     if qa_entries:
-                        print(f"✅ Successfully parsed {len(qa_entries)} Q&A entries")
+                        #print(f"Successfully parsed {len(qa_entries)} Q&A entries from image")
                         return qa_entries
 
-                    print(f"[WARN] No valid Q&A parsed. Retrying...")
+                    print(f"[WARN] No valid Q&A parsed from image. Retrying...")
                     if attempt < MAX_RETRIES - 1: await asyncio.sleep(RETRY_DELAY)
 
         except httpx.ReadTimeout:
@@ -880,6 +871,7 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
 
     app_state.is_processing = True
     enable_multimodal = config.get("processing", {}).get("enable_multimodal", True)
+    use_semantic = config.get("processing", {}).get("semantic_chunking", True)
 
     sources_to_process = selected_sources or []
     app_state.processing_state["queue"] = list(sources_to_process)
@@ -891,6 +883,7 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
     try:
         files_to_skip = set() if selected_sources else get_files_to_skip_from_memory(app_state)
 
+        # Reset counters
         app_state.processing_state["text_chunks_total"] = 0
         app_state.processing_state["images_total"] = 0
         app_state.processing_state["text_chunks_completed"] = 0
@@ -898,24 +891,23 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
         app_state.processing_state["total_units"] = 0
         app_state.processing_state["completed_units"] = 0
 
+        # -----------------------------------------------------------------------
+        # PRE-COUNT: Only count images (text chunks are counted dynamically below)
+        # -----------------------------------------------------------------------
         for filename in sources_to_process:
             is_pdf = filename.lower().endswith('.pdf')
             filepath = os.path.join(PDF_DIR, filename) if is_pdf else os.path.join(WEB_DIR, filename)
-            if not os.path.exists(filepath): continue
+            if not os.path.exists(filepath):
+                continue
 
-            if filename not in (images_only_sources or set()):
-                text = extract_text_from_pdf(filepath) if is_pdf else extract_text_from_file(filepath)
-                if len(text.strip()) >= 100:
-                    app_state.processing_state["text_chunks_total"] += len(chunk_text(text, max_length=CHUNK_SIZE))
-
+            # Count images for PDFs (multimodal pages)
             if enable_multimodal and is_pdf:
                 with pdfplumber.open(filepath) as _pdf:
                     app_state.processing_state["images_total"] += len(_pdf.pages)
 
-        app_state.processing_state["total_units"] = (
-            app_state.processing_state["text_chunks_total"] + app_state.processing_state["images_total"]
-        )
-        print(f"📊 Total work: {app_state.processing_state['text_chunks_total']} text chunks + {app_state.processing_state['images_total']} images = {app_state.processing_state['total_units']} units")
+        # Initial total = images only; text chunks will be added dynamically
+        app_state.processing_state["total_units"] = app_state.processing_state["images_total"]
+        #print(f"\nFound {app_state.processing_state['images_total']} images (text chunks counted dynamically)")
 
         for filename in sources_to_process:
             if app_state.should_cancel_all:
@@ -937,19 +929,33 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
 
             is_pdf = filename.lower().endswith('.pdf')
             filepath = os.path.join(PDF_DIR, filename) if is_pdf else os.path.join(WEB_DIR, filename)
-            if not os.path.exists(filepath): continue
+            if not os.path.exists(filepath):
+                continue
 
             try:
+                # ----------------------------------------------------------------
+                # TEXT PROCESSING
+                # ----------------------------------------------------------------
                 if filename not in (images_only_sources or set()):
                     text = extract_text_from_pdf(filepath) if is_pdf else extract_text_from_file(filepath)
                     if len(text.strip()) >= 100:
-                        use_semantic = config.get("processing", {}).get("semantic_chunking", True)
+                        chunks = []
                         if use_semantic and len(text.strip()) > 500:
-                            chunks = await semantic_chunk_text(text, filename=filename, max_chunk_tokens=config.get("processing", {}).get("max_chunk_tokens", 16000), app_state=app_state)
+                            chunks = await semantic_chunk_text(
+                                text, filename=filename,
+                                max_chunk_tokens=config.get("processing", {}).get("max_chunk_tokens", 16000),
+                                app_state=app_state
+                            )
                         else:
-                            chunks = chunk_text(text, max_length=CHUNK_SIZE)
+                            # No semantic chunking: treat entire document as a single chunk
+                            chunks = [text.strip()]
+
                         total_chunks = len(chunks)
-                        print(f"  Text split into {total_chunks} chunks")
+
+                        # Dynamically add the actual number of text chunks to the total
+                        app_state.processing_state["text_chunks_total"] += total_chunks
+                        app_state.processing_state["total_units"] += total_chunks
+                        print(f"  Text split into {total_chunks} chunks (updated total units: {app_state.processing_state['total_units']})")
 
                         for i, chunk in enumerate(chunks):
                             if app_state.should_cancel_all or (app_state.should_cancel_current and app_state.processing_state["current_source"] == filename):
@@ -972,13 +978,18 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
                                 (app_state.processing_state["completed_units"] / max(app_state.processing_state["total_units"], 1)) * 100
                             )
 
-                            if len(new_entries) > 0: save_state(app_state)
-                            if BATCH_DELAY > 0: await asyncio.sleep(BATCH_DELAY)
+                            if len(new_entries) > 0:
+                                save_state(app_state)
+                            if BATCH_DELAY > 0:
+                                await asyncio.sleep(BATCH_DELAY)
                     else:
                         print(f"  Skipping text: too little content")
                 else:
                     print(f"  Skipping text Q&A (Images Only mode)")
 
+                # ----------------------------------------------------------------
+                # IMAGE PROCESSING
+                # ----------------------------------------------------------------
                 if app_state.should_cancel_all or (app_state.should_cancel_current and app_state.processing_state.get("current_source") == filename):
                     print(f"🛑 Cancellation requested, skipping image processing for {filename}")
                     app_state.should_cancel_current = False
@@ -1017,8 +1028,10 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
                         )
                         app_state.processing_state["progress_percent"] = min(progress, 100)
 
-                        if len(new_entries) > 0: save_state(app_state)
-                        if BATCH_DELAY > 0: await asyncio.sleep(BATCH_DELAY)
+                        if len(new_entries) > 0:
+                            save_state(app_state)
+                        if BATCH_DELAY > 0:
+                            await asyncio.sleep(BATCH_DELAY)
 
                 app_state.processing_state["completed"].append(filename)
                 print(f"✅ Completed: {filename}")

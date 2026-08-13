@@ -26,16 +26,17 @@ paths:
   state_file: ".review_state.json"
 
 processing:
-  chunk_size: 3000
-  qa_per_chunk: 10
-  batch_delay: 8.0  # seconds between chunks requests
-  image_qa_per_image: 3
+  qa_per_10k_tokens: 35     # target Q&As per 10K tokens, scales linearly
+  qa_min: 3                 # floor: avoid degenerate single-Q&A chunks
+  qa_max: 60                # ceiling: avoid context overflow on huge chunks
+  batch_delay: 8.0          # seconds between chunks requests
+  image_qa_per_image: 3     # Q&A per image
   enable_multimodal: true
-  debug_print: false
-  semantic_chunking: true
+  semantic_chunking: true   # toggle: if false, treat entire doc as one chunk
   semantic_batch_size: 60
   semantic_overlap: 10
-  max_chunk_tokens: 16000   # if too high-> lost-in-the-middle effect (LITM)
+  max_chunk_tokens: 10000   # if too high-> lost-in-the-middle effect (LITM)
   force_doc_type: ""        # leave empty for auto
   max_retries: 3            # number of retries after request failure
   retry_delay: 0            # seconds of delay after request failure
+  debug_print: false
