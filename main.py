@@ -1,4 +1,6 @@
 # main.py
+
+import tempfile
 import os
 import json
 import time
@@ -179,8 +181,9 @@ def unique_path(directory: str, filename: str) -> str:
         counter += 1
     return candidate
 
+
 def save_state(app_state: AppState):
-    """Save current state to STATE_FILE for resuming later"""
+    """Save current state to STATE_FILE with atomic writes for multi-worker safety"""
     if not app_state.processed_documents:
         return
 
@@ -202,11 +205,17 @@ def save_state(app_state: AppState):
             "processed_files": processed_files,
             "processed_documents": [entry.model_dump() if hasattr(entry, 'model_dump') else dict(entry) for entry in app_state.processed_documents]
         }
-        with open(STATE_FILE, 'w', encoding='utf-8') as f:
-            json.dump(state_data, f, ensure_ascii=False, indent=2)
-        print(f"State saved to {STATE_FILE} ({len(app_state.processed_documents)} entries from {len(processed_files)} files)")
+        
+        # Atomic write: write to temp file, then replace. Prevents corruption from concurrent workers.
+        dir_name = os.path.dirname(os.path.abspath(STATE_FILE)) or "."
+        with tempfile.NamedTemporaryFile('w', encoding='utf-8', dir=dir_name, delete=False, suffix='.tmp') as tmp:
+            json.dump(state_data, tmp, ensure_ascii=False, indent=2)
+            tmp_path = tmp.name
+            
+        os.replace(tmp_path, STATE_FILE)
+        print(f"✓ State saved to {STATE_FILE} ({len(app_state.processed_documents)} entries)")
     except Exception as e:
-        print(f"Error saving state: {e}")
+        print(f"✗ Error saving state: {e}")
 
 
 def load_state(app_state: AppState):
@@ -1075,9 +1084,26 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
 
 @asynccontextmanager
 async def lifespan(app):
+    # Startup: Load state into each worker's memory
     app.state.app_state = AppState()
     load_state(app.state.app_state)
+    
     yield
+    
+    # Shutdown: Each worker saves its in-memory state before exiting
+    print("\n" + "=" * 60)
+    print("🛑 Worker shutting down... saving state...")
+    print("=" * 60)
+    
+    app_state = getattr(app.state, "app_state", None)
+    if app_state and getattr(app_state, "processed_documents", None):
+        try:
+            save_state(app_state)
+        except Exception as e:
+            print(f"✗ Error saving state on exit: {e}")
+            
+    print("✓ Worker clean exit complete.")
+    print("=" * 60)
 
 
 app = FastAPI(title=APP_NAME, lifespan=lifespan)

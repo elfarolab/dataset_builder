@@ -83,7 +83,7 @@ Build accurate, actionable training data for domain-specific AI assistants. This
 
 1. **Start the web server:**
    ```bash
-   python main.py
+   ./run.sh
    ```
    The interface starts at `http://localhost:8501`.
 

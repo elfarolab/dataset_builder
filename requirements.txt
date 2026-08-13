@@ -11,3 +11,4 @@ certifi
 pytest
 pytest-asyncio
 pytest-cov
+uvloop
