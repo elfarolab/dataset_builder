@@ -886,19 +886,33 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
     # Safety: Clear stale cancellation flags from previous test runs
     app_state.should_cancel_all = False
     app_state.should_cancel_current = False
-
     app_state.is_processing = True
     enable_multimodal = config.get("processing", {}).get("enable_multimodal", True)
     use_semantic = config.get("processing", {}).get("semantic_chunking", True)
 
     sources_to_process = selected_sources or []
-    app_state.processing_state["queue"] = list(sources_to_process)
-    app_state.processing_state["completed"] = []
-    app_state.processing_state["is_processing"] = True
-    app_state.processing_state["total_units"] = 0
-    app_state.processing_state["completed_units"] = 0
-    app_state.processing_state["start_time"] = time.time()
-    app_state.processing_state.setdefault("source_start_times", {})
+    
+    app_state.processing_state.update({
+        "is_processing": True,
+        "current_source": None,
+        "progress_percent": 0,
+        "queue": list(sources_to_process),
+        "completed": [],
+        "phase": None,
+        "text_chunks_total": 0,
+        "text_chunks_completed": 0,
+        "images_total": 0,
+        "images_completed": 0,
+        "total_units": 0,
+        "completed_units": 0,
+        "start_time": time.time(),
+        "source_start_times": {},
+        "source_end_times": {},
+    })
+
+    print(f"\n🐛 [DEBUG] Processing started. sources_to_process: {sources_to_process}")
+    print(f"🐛 [DEBUG] images_total AFTER reset: {app_state.processing_state['images_total']}")
+    print(f"🐛 [DEBUG] enable_multimodal: {enable_multimodal}")
 
     try:
         files_to_skip = set() if selected_sources else get_files_to_skip_from_memory(app_state)
@@ -912,22 +926,29 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
         app_state.processing_state["completed_units"] = 0
 
         # -----------------------------------------------------------------------
-        # PRE-COUNT: Only count images (text chunks are counted dynamically below)
+        # PRE-COUNT: Track image totals PER SOURCE
         # -----------------------------------------------------------------------
+        app_state.processing_state.setdefault("source_image_totals", {})
+        app_state.processing_state.setdefault("source_images_completed", {})
+
         for filename in sources_to_process:
             is_pdf = filename.lower().endswith('.pdf')
             filepath = os.path.join(PDF_DIR, filename) if is_pdf else os.path.join(WEB_DIR, filename)
             if not os.path.exists(filepath):
                 continue
 
-            # Count images for PDFs (multimodal pages)
+            app_state.processing_state["source_image_totals"][filename] = 0
+            app_state.processing_state["source_images_completed"][filename] = 0
+
             if enable_multimodal and is_pdf:
                 with pdfplumber.open(filepath) as _pdf:
-                    app_state.processing_state["images_total"] += len(_pdf.pages)
+                    page_count = len(_pdf.pages)
+                    app_state.processing_state["source_image_totals"][filename] = page_count
+                    app_state.processing_state["images_total"] += page_count
 
         # Initial total = images only; text chunks will be added dynamically
         app_state.processing_state["total_units"] = app_state.processing_state["images_total"]
-        #print(f"\nFound {app_state.processing_state['images_total']} images (text chunks counted dynamically)")
+
 
         for filename in sources_to_process:
             if app_state.should_cancel_all:
@@ -973,7 +994,13 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
 
                         total_chunks = len(chunks)
 
-                        # Dynamically add the actual number of text chunks to the total
+                        # Track per-source text totals
+                        app_state.processing_state.setdefault("source_text_totals", {})
+                        app_state.processing_state.setdefault("source_text_completed", {})
+                        app_state.processing_state["source_text_totals"][filename] = total_chunks
+                        app_state.processing_state["source_text_completed"][filename] = 0
+
+                        # Dynamically add to global totals
                         app_state.processing_state["text_chunks_total"] += total_chunks
                         app_state.processing_state["total_units"] += total_chunks
                         print(f"  Text split into {total_chunks} chunks (updated total units: {app_state.processing_state['total_units']})")
@@ -992,9 +1019,11 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
 
                             app_state.processing_state["phase"] = "text"
                             app_state.processing_state["text_chunks_completed"] += 1
+                            app_state.processing_state["source_text_completed"][filename] += 1
                             app_state.processing_state["completed_units"] = (
                                 app_state.processing_state["text_chunks_completed"] + app_state.processing_state["images_completed"]
                             )
+
                             app_state.processing_state["progress_percent"] = min(round(
                                 (app_state.processing_state["completed_units"] / max(app_state.processing_state["total_units"], 1)) * 100
                             ), 100)
@@ -1042,9 +1071,11 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
 
                         app_state.processing_state["phase"] = "images"
                         app_state.processing_state["images_completed"] += 1
+                        app_state.processing_state["source_images_completed"][filename] += 1
                         app_state.processing_state["completed_units"] = (
                             app_state.processing_state["text_chunks_completed"] + app_state.processing_state["images_completed"]
                         )
+
                         progress = min(round(
                             (app_state.processing_state["completed_units"] / max(app_state.processing_state["total_units"], 1)) * 100
                         ), 100)
@@ -1056,6 +1087,7 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
                             await asyncio.sleep(BATCH_DELAY)
 
                 app_state.processing_state["completed"].append(filename)
+                app_state.processing_state["source_end_times"][filename] = time.time()
                 print(f"✅ Completed: {filename}")
 
             except Exception as e:

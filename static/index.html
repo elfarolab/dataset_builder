@@ -2017,6 +2017,7 @@
         const items = [];
         const now = Date.now() / 1000;
         const sourceTimes = state.source_start_times || {};
+        const sourceEndTimes = state.source_end_times || {};
 
         // Helper to format seconds -> MM:SS
         const fmt = (sec) => {
@@ -2035,25 +2036,42 @@
                 elapsedEl.textContent = '';
             }
         }
-   
+
+        const completedSet = new Set(state.completed);
+
         if (state.current_source) {
             items.push({ name: state.current_source, status: 'processing', progress: state.progress_percent });
         }
+
         state.queue.forEach(src => {
-            if (src !== state.current_source) items.push({ name: src, status: 'queued', progress: 0 });
+            // Skip if currently processing or already marked completed to prevent duplicates
+            if (src !== state.current_source && !completedSet.has(src)) {
+                items.push({ name: src, status: 'queued', progress: 0 });
+            }
         });
+
         state.completed.slice(-5).forEach(src => {
             items.push({ name: src, status: 'completed', progress: 100 });
         });
-    
-        const textTotal = state.text_chunks_total || 0;
-        const textDone = state.text_chunks_completed || 0;
-        const imgTotal = state.images_total || 0;
-        const imgDone = state.images_completed || 0;
-    
+
+        // Use per-source counters for the currently processing file
+        const currentSrc = state.current_source;
+        const sourceTextTotals = state.source_text_totals || {};
+        const sourceTextCompleted = state.source_text_completed || {};
+        const sourceImgTotals = state.source_image_totals || {};
+        const sourceImgCompleted = state.source_images_completed || {};
+
+        const textTotal = currentSrc ? (sourceTextTotals[currentSrc] || 0) : 0;
+        const textDone = currentSrc ? (sourceTextCompleted[currentSrc] || 0) : 0;
+        const imgTotal = currentSrc ? (sourceImgTotals[currentSrc] || 0) : 0;
+        const imgDone = currentSrc ? (sourceImgCompleted[currentSrc] || 0) : 0;
+
         const textPct = textTotal > 0 ? Math.round((textDone / textTotal) * 100) : 0;
         const imgPct = imgTotal > 0 ? Math.round((imgDone / imgTotal) * 100) : 0;
-    
+
+        const textLabel = textTotal > 0 ? `${textDone}/${textTotal}` : '--/--';
+        const imgLabel = imgTotal > 0 ? `${imgDone}/${imgTotal}` : '--/--';
+
         list.innerHTML = items.map(item => {
             let statusHtml = '';
             if (item.status === 'processing') {
@@ -2063,8 +2081,8 @@
                         <div class="mini-row"><div class="mini-bar"><div class="mini-fill-images" style="width:${imgPct}%"></div></div></div>
                     </div>
                     <div class="progress-labels">
-                        <span class="mini-label">text ${textDone}/${textTotal}</span>
-                        <span class="mini-label">images ${imgDone}/${imgTotal}</span>
+                        <span class="mini-label">text ${textLabel}</span>
+                        <span class="mini-label">images ${imgLabel}</span>
                     </div>
                     <button class="cancel-btn" onclick="cancelProcessing(false)" title="Stop this source">✕</button>`;
             } else if (item.status === 'queued') {
@@ -2073,10 +2091,19 @@
                 statusHtml = `<span style="font-size:0.8rem; color:var(--success);">✅ Done</span>`;
             }
 
-            // Calculate per-file elapsed time
-            const fileStart = sourceTimes[item.name];
-            const fileElapsed = fileStart ? Math.max(0, now - fileStart) : 0;
-            const elapsedStr = fmt(fileElapsed);
+            // FIXED: Freeze timer for completed items using end timestamp
+            let elapsedStr = '--:--';
+            if (item.status === 'completed') {
+                const start = sourceTimes[item.name];
+                const end = sourceEndTimes[item.name];
+                if (start && end) {
+                    elapsedStr = fmt(end - start);
+                }
+            } else {
+                const fileStart = sourceTimes[item.name];
+                const fileElapsed = fileStart ? Math.max(0, now - fileStart) : 0;
+                elapsedStr = fmt(fileElapsed);
+            }
 
             return `
                 <div class="source-item">
@@ -2086,7 +2113,7 @@
                 </div>`;
         }).join('');
     }
-    
+   
 
     // ==================== IMPORT MODAL ====================
     let importFilesData = [];
