@@ -10,3 +10,4 @@ pymupdf
 certifi
 pytest
 pytest-asyncio
+pytest-cov
