@@ -274,59 +274,7 @@
             transition: width 0.3s;
             border-radius: 4px;
         }
-
-        /* Dual-phase progress */
-        .phase-progress {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            min-width: 180px;
-        }
-        
-        .phase-row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        
-        .phase-label {
-            font-size: 0.7rem;
-            color: var(--gray-600);
-            min-width: 52px;
-            text-align: right;
-            white-space: nowrap;
-        }
-        
-        .phase-bar {
-            flex: 1;
-            height: 8px;
-            background: var(--gray-200);
-            border-radius: 4px;
-            overflow: hidden;
-        }
-        
-        .phase-fill-text {
-            height: 100%;
-            background: linear-gradient(90deg, #5b9e5b, #8ad4bd);
-            transition: width 0.3s ease;
-            border-radius: 4px;
-        }
-        
-        .phase-fill-images {
-            height: 100%;
-            background: linear-gradient(90deg, #6b8cce, #a78bfa);
-            transition: width 0.3s ease;
-            border-radius: 4px;
-        }
-        
-        .phase-count {
-            font-size: 0.7rem;
-            color: var(--gray-600);
-            min-width: 50px;
-            text-align: left;
-            white-space: nowrap;
-        }
-        
+       
         .overall-progress-row {
             display: flex;
             align-items: center;
@@ -1275,9 +1223,8 @@
     let selectedProcessSources = new Set();
     let availableSourcesData = [];  // Cache for all available sources
     let selectedProcessImagesOnly = new Set();
+    let uiRefreshInterval = null;
 
-
-    // Init
     // Init
     document.addEventListener('DOMContentLoaded', () => {
         checkLlamaStatus();
@@ -1906,7 +1853,7 @@
                                    ${isChecked ? '' : 'disabled'}
                                    ${isImagesOnly ? 'checked' : ''}
                                    onchange="toggleImagesOnly('${escapeHtml(src.filename)}', this.checked)">
-                            🖼️ Images Only
+                            Images Only
                         </label>
                     </div>
                 `;
@@ -1992,12 +1939,14 @@
 
     function startPolling() {
         stopPolling();
+        
+        // Fast poll for progress bar & queue status
         processingPollInterval = setInterval(async () => {
             try {
                 const res = await fetch('/api/processing-status');
                 const state = await res.json();
                 renderProcessingPanel(state);
-
+    
                 if (!state.is_processing) {
                     stopPolling();
                     resetMainButton();
@@ -2007,12 +1956,37 @@
                 }
             } catch (e) { console.error('Poll error:', e); }
         }, 800);
+    
+        // Slower poll to keep Sources Table & Stats in sync during processing
+        uiRefreshInterval = setInterval(async () => {
+            try {
+                await Promise.all([fetchSources(), fetchStats()]);
+                
+                // Update detail view meta if currently viewing a source
+                if (currentSourceFile) {
+                    const src = sourcesData.find(s => s.filename === currentSourceFile);
+                    if (src) {
+                        document.getElementById('detailSourceMeta').innerHTML = `
+                            <span>Type: ${src.type}</span>
+                            <span>•</span>
+                            <span>${src.total_qa} Q&A pairs</span>
+                            <span>•</span>
+                            <span>${src.reviewed_qa} reviewed</span>
+                        `;
+                    }
+                }
+            } catch (e) { console.error('UI refresh poll error:', e); }
+        }, 2500); // Refresh every 2.5 seconds to balance responsiveness & load
     }
 
     function stopPolling() {
         if (processingPollInterval) {
             clearInterval(processingPollInterval);
             processingPollInterval = null;
+        }
+        if (uiRefreshInterval) {
+            clearInterval(uiRefreshInterval);
+            uiRefreshInterval = null;
         }
     }
 
@@ -2085,15 +2059,7 @@
                 </div>`;
         }).join('');
     }
-
-    function toggleImagesOnly(filename, checked) {
-        if (checked) {
-            selectedProcessImagesOnly.add(filename);
-        } else {
-            selectedProcessImagesOnly.delete(filename);
-        }
-    }
-    
+ 
     // ==================== IMPORT MODAL ====================
     let importFilesData = [];
     let selectedImportFile = null;

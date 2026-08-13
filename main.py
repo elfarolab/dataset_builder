@@ -578,7 +578,8 @@ async def generate_qa_from_image(image_info: Dict, source_file: str, image_index
             return []
 
         try:
-            async with httpx.AsyncClient(timeout=LLAMA_TIMEOUT * 2) as client:
+            client_timeout = httpx.Timeout(connect=10.0, read=LLAMA_TIMEOUT * 2, write=10.0, pool=5.0)
+            async with httpx.AsyncClient(timeout=client_timeout) as client:
                 payload = {
                     "model": LLAMA_MODEL_NAME,
                     "messages": [{"role": "user", "content": [
@@ -727,7 +728,6 @@ def get_files_to_skip_from_memory(app_state: AppState):
 
     return files_to_skip
 
-
 async def generate_qa_from_text(text_chunk: str, source_file: str, chunk_index: int, app_state: AppState = None) -> List[QAEntry]:
     verbose = config.get("processing", {}).get("debug_print", False)
     token_estimate = len(text_chunk.strip()) // 4
@@ -741,7 +741,9 @@ async def generate_qa_from_text(text_chunk: str, source_file: str, chunk_index: 
             return []
 
         try:
-            async with httpx.AsyncClient(timeout=LLAMA_TIMEOUT * 2) as client:
+            # Explicit timeout config to survive long prompt processing without read timeouts
+            client_timeout = httpx.Timeout(connect=10.0, read=LLAMA_TIMEOUT * 2, write=10.0, pool=5.0)
+            async with httpx.AsyncClient(timeout=client_timeout) as client:
                 payload = {
                     "model": LLAMA_MODEL_NAME, "prompt": prompt, "max_tokens": LLAMA_MAX_TOKENS,
                     "temperature": LLAMA_TEMPERATURE, "top_p": LLAMA_TOP_P,
@@ -843,26 +845,27 @@ async def generate_qa_from_text(text_chunk: str, source_file: str, chunk_index: 
                                     ))
                             except json.JSONDecodeError: continue
 
+                    # FIXED LOG MESSAGE & RETRY LOGIC
                     if len(qa_entries) < QA_MIN and attempt < MAX_RETRIES - 1:
-                        print(f"⚠️ Only {len(qa_entries)} Q&As from image (minimum {QA_MIN}). Retrying...")
+                        print(f"⚠️ Only {len(qa_entries)} Q&As generated (minimum {QA_MIN}). Retrying...")
                         await asyncio.sleep(RETRY_DELAY)
                         continue
 
                     if qa_entries:
-                        #print(f"Successfully parsed {len(qa_entries)} Q&A entries from image")
                         return qa_entries
 
-                    print(f"[WARN] No valid Q&A parsed from image. Retrying...")
+                    print(f"[WARN] No valid Q&A parsed. Retrying...")
                     if attempt < MAX_RETRIES - 1: await asyncio.sleep(RETRY_DELAY)
 
         except httpx.ReadTimeout:
-            print(f"Read timeout on attempt {attempt + 1}/{MAX_RETRIES}")
+            print(f"Read timeout on attempt {attempt + 1}/{MAX_RETRIES} (likely long prompt processing)")
             if attempt < MAX_RETRIES - 1: await asyncio.sleep(RETRY_DELAY)
         except httpx.ConnectError as e:
             print(f"Connection error: {e}")
             if attempt < MAX_RETRIES - 1: await asyncio.sleep(RETRY_DELAY)
 
     return []
+
 
 async def process_all_documents(selected_sources: Optional[List[str]] = None, images_only_sources: Optional[set] = None, app_state: AppState = None):
     if app_state.is_processing:
@@ -965,7 +968,7 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
                             if app_state.should_cancel_all or (app_state.should_cancel_current and app_state.processing_state["current_source"] == filename):
                                 break
 
-                            print(f"  Generating Q&A for text chunk {i+1}/{total_chunks}...")
+                            print(f"\nGenerating Q&A for text chunk {i+1}/{total_chunks}...")
                             qa_entries = await generate_qa_from_text(chunk, filename, i, app_state=app_state)
 
                             existing_ids = {e.id for e in app_state.processed_documents}
@@ -1009,7 +1012,7 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
                         if app_state.should_cancel_all or (app_state.should_cancel_current and app_state.processing_state["current_source"] == filename):
                             break
 
-                        print(f"    Processing image {img_idx+1}/{total_images} (page {img_info.get('page', 0)})...")
+                        print(f"\nProcessing image {img_idx+1}/{total_images} (page {img_info.get('page', 0)})...")
 
                         text_context = ""
                         if 'text' in locals() and text.strip():
@@ -1046,7 +1049,7 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
                 traceback.print_exc()
 
         save_state(app_state)
-        print(f"\n🎯 Total Q&A pairs: {len(app_state.processed_documents)}")
+        print(f"\nTotal Q&A pairs: {len(app_state.processed_documents)}")
 
     except asyncio.CancelledError:
         print("🛑 process_all_documents cancelled")
@@ -1508,7 +1511,14 @@ if __name__ == "__main__":
     host = config["server"].get("host", "0.0.0.0")
     port = config["server"].get("port", 8501)
 
-    uvicorn_config = uvicorn.Config(app, host=host, port=port, log_level="warning", access_log=False)
+    uvicorn_config = uvicorn.Config(
+			app, 
+			host=host, 
+			port=port,
+			log_level="warning",
+			access_log=False,
+			workers=4
+    )
     server = uvicorn.Server(uvicorn_config)
 
     shutdown_event = asyncio.Event()
