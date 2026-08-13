@@ -649,7 +649,7 @@ async def generate_qa_from_image(image_info: Dict, source_file: str, image_index
                     json_pattern = re.compile(r'\{[^{}]*"instruction"[^{}]*"output"[^{}]*\}', re.DOTALL)
                     if verbose:
                         matches = list(json_pattern.finditer(content_cleaned))
-                        print(f"🔍 Regex found {len(matches)} potential JSON objects")
+                        print(f"Regex found {len(matches)} potential JSON objects")
                         for i, m in enumerate(matches): print(f"  Match {i} (first 150 chars): {m.group(0)[:150]}...")
 
                     qa_entries = []
@@ -665,11 +665,11 @@ async def generate_qa_from_image(image_info: Dict, source_file: str, image_index
                                 output=qa_data.get("output", ""), source_file=source_file, chunk_index=-1, enabled=True, edited=False
                             ))
                         except json.JSONDecodeError as e:
-                            if verbose: print(f"   ⚠️ JSON parse error: {str(e)[:100]}")
+                            if verbose: print(f"   ⚠️  JSON parse error: {str(e)[:100]}")
                             continue
 
                     if not qa_entries:
-                        if verbose: print("⚠️ Regex found no matches, trying line-by-line fallback...")
+                        if verbose: print("⚠️  Regex found no matches, trying line-by-line fallback...")
                         for line_num, line in enumerate(content_cleaned.strip().split('\n')):
                             line = re.sub(r'^[*`\s]*', '', line.strip()).strip()
                             line = re.sub(r'[*`]\s*$', '', line).strip()
@@ -690,7 +690,8 @@ async def generate_qa_from_image(image_info: Dict, source_file: str, image_index
                         return qa_entries
 
                     print(f"[WARN] No valid Q&A parsed from image. Retrying...")
-                    if attempt < MAX_RETRIES - 1: await asyncio.sleep(RETRY_DELAY)
+                    if attempt < MAX_RETRIES - 1:
+                        await asyncio.sleep(RETRY_DELAY)
 
         except httpx.ReadTimeout:
             print(f"Multimodal timeout on attempt {attempt + 1}/{MAX_RETRIES}")
@@ -825,11 +826,11 @@ async def generate_qa_from_text(text_chunk: str, source_file: str, chunk_index: 
                                 output=qa_data.get("output", ""), source_file=source_file, chunk_index=chunk_index, enabled=True, edited=False
                             ))
                         except json.JSONDecodeError as e:
-                            if verbose: print(f"   ⚠️ JSON parse error: {str(e)[:100]}")
+                            if verbose: print(f"   ⚠️  JSON parse error: {str(e)[:100]}")
                             continue
 
                     if not qa_entries:
-                        if verbose: print("⚠️ Regex found no matches, trying line-by-line fallback...")
+                        if verbose: print("⚠️  Regex found no matches, trying line-by-line fallback...")
                         for line_num, line in enumerate(content_cleaned.strip().split('\n')):
                             line = re.sub(r'^[*`\s]*', '', line.strip()).strip()
                             line = re.sub(r'[*`]\s*$', '', line).strip()
@@ -847,7 +848,7 @@ async def generate_qa_from_text(text_chunk: str, source_file: str, chunk_index: 
 
                     # FIXED LOG MESSAGE & RETRY LOGIC
                     if len(qa_entries) < QA_MIN and attempt < MAX_RETRIES - 1:
-                        print(f"⚠️ Only {len(qa_entries)} Q&As generated (minimum {QA_MIN}). Retrying...")
+                        print(f"⚠️  {len(qa_entries)} Q&As generated (minimum {QA_MIN}). Retrying...")
                         await asyncio.sleep(RETRY_DELAY)
                         continue
 
@@ -855,7 +856,8 @@ async def generate_qa_from_text(text_chunk: str, source_file: str, chunk_index: 
                         return qa_entries
 
                     print(f"[WARN] No valid Q&A parsed. Retrying...")
-                    if attempt < MAX_RETRIES - 1: await asyncio.sleep(RETRY_DELAY)
+                    if attempt < MAX_RETRIES - 1: 
+                        await asyncio.sleep(RETRY_DELAY)
 
         except httpx.ReadTimeout:
             print(f"Read timeout on attempt {attempt + 1}/{MAX_RETRIES} (likely long prompt processing)")
@@ -987,6 +989,7 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
 
                             if len(new_entries) > 0:
                                 save_state(app_state)
+
                             if BATCH_DELAY > 0:
                                 await asyncio.sleep(BATCH_DELAY)
                     else:

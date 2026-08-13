@@ -38,5 +38,5 @@ processing:
   max_chunk_tokens: 10000   # if too high-> lost-in-the-middle effect (LITM)
   force_doc_type: ""        # leave empty for auto
   max_retries: 3            # number of retries after request failure
-  retry_delay: 0            # seconds of delay after request failure
+  retry_delay: 8            # seconds of delay after request failure
   debug_print: false
