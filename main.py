@@ -1084,15 +1084,15 @@ async def process_all_documents(selected_sources: Optional[List[str]] = None, im
 
 @asynccontextmanager
 async def lifespan(app):
-    # Startup: Load state into each worker's memory
+    # Startup: Load state into memory
     app.state.app_state = AppState()
     load_state(app.state.app_state)
     
     yield
     
-    # Shutdown: Each worker saves its in-memory state before exiting
+    # Shutdown: saves its in-memory state before exiting
     print("\n" + "=" * 60)
-    print("🛑 Worker shutting down... saving state...")
+    print("🛑 Shutting down... saving state...")
     print("=" * 60)
     
     app_state = getattr(app.state, "app_state", None)
@@ -1102,7 +1102,7 @@ async def lifespan(app):
         except Exception as e:
             print(f"✗ Error saving state on exit: {e}")
             
-    print("✓ Worker clean exit complete.")
+    print("✓ Clean exit complete.")
     print("=" * 60)
 
 
