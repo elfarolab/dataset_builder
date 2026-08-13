@@ -32,9 +32,3 @@ jobs:
       - name: Run tests against fake llama.cpp backend with coverage
         run: |
           python -m pytest ./tests --tb=short --strict-markers -v --cov=. --cov-report=xml
-
-      - name: Upload to Codecov
-        uses: codecov/codecov-action@v7
-        with:
-          files: coverage.xml
-          fail_ci_if_error: false
