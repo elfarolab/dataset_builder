@@ -1,3 +1,16 @@
+## 14 Aug 2026: Big refactoring of code is underway
+ 
+I am doing big changes, so stay sit:
+- adding docling
+- dropping saving the state into JSONL file, using sqlite instead
+- adding critical analysis with dedup and hallucination detection steps using specific models
+- bugs fixes
+- processing functions improvements and split
+
+I will probably upload the changes wityhin 2 days.
+
+---
+
 ## This is still a work in progress.
 
 It works, but there are still many improvements to be made.
@@ -120,45 +133,6 @@ PDF/TXT files → Text + table extraction → Semantic topic boundary detection 
 - **Q&A generation**: Each chunk/image is sent via SSE streaming. Cancellation flags are checked per-token, allowing instant stop without waiting for timeouts.
 - **Response parsing**: Handles both native llama.cpp and OpenAI-compatible formats; automatically strips reasoning/thinking tags (`<thinking>`, `<think>`, etc.) before JSONL extraction.
 - **State management**: Tracks processed files, modification times, and review status; smart resumption skips unchanged content.
-
-## 📁 Project Structure
-
-```
-dataset_builder/
-├── main.py                # FastAPI backend + API routes
-├── image_extractor.py     # PDF image rendering & context extraction
-├── config.yaml            # App, server, and processing configuration
-├── static/
-│   └── index.html         # Web review interface (dynamic title/subtitle)
-├── scripts/
-│   └── sanitize-yaml.sh   # Script to sanitize private data before pushing to repo
-├── pdf/                   # Input: place PDF files here
-├── web/                   # Input: place .txt files here
-├── result/                # Output: exported JSONL datasets
-└── .review_state.json     # Auto-generated: progress & review tracking
-```
-
-## 🔧 API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/` | Web review interface |
-| `GET` | `/api/config` | Returns app name, subtitle, persona, audience |
-| `GET` | `/api/stats` | Processing statistics & counts |
-| `GET` | `/api/debug/state` | Debug endpoint: state inspection (entry count, sample entry, field checks) |
-| `GET` | `/api/available-sources` | Lists all files on disk with processing status |
-| `POST` | `/api/process` | Triggers document processing (accepts source selection & images-only toggle) |
-| `GET` | `/api/processing-status` | Real-time progress, queue, and cancellation state |
-| `POST` | `/api/cancel-processing` | Instantly stops streaming generation (supports per-source or global cancel) |
-| `GET` | `/api/entries?page=N&per_page=20&source_file=X` | Paginated Q&A entries with optional source filter |
-| `POST` | `/api/entries/{id}` | Update content, toggle enable/review status for a single entry |
-| `POST` | `/api/entries/mark-reviewed` | Bulk mark multiple entries as reviewed (accepts JSON body with `ids` array) |
-| `POST` | `/api/export` | Export selected reviewed entries to JSONL |
-| `GET` | `/api/llama-status` | Check backend connectivity |
-| `POST` | `/api/sources/url` | Download PDF from URL into `pdf/` |
-| `POST` | `/api/sources/text` | Save pasted text into `web/` |
-| `DELETE` | `/api/sources/{source_file}` | Remove all Q&A entries for a source file, resetting its processing status |
-| `POST` | `/api/sources/{source_file}/mark-all-reviewed` | Mark all Q&A entries in a given source as reviewed at once |
 
 
 ## 📝 Best Practices: The `Input (Context)` Field

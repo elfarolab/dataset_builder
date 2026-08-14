@@ -1581,8 +1581,7 @@ if __name__ == "__main__":
 			host=host, 
 			port=port,
 			log_level="warning",
-			access_log=False,
-			workers=4
+			access_log=False
     )
     server = uvicorn.Server(uvicorn_config)
 
