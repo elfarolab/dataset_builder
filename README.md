@@ -1,13 +1,14 @@
-## 14 Aug 2026: Big refactoring of code is underway
- 
-I am doing big changes, so stay sit:
-- adding docling
-- dropping saving the state into JSONL file, using sqlite instead
-- adding critical analysis with dedup and hallucination detection steps using specific models
-- bugs fixes
-- processing functions improvements and split
+## 14 Aug 2026: Big refactoring of code is underway.
 
-I will probably upload the changes wityhin 2 days.
+I am doing big changes, stay tuned:
+
+- adding docling
+- dropping saving the state into a JSONL file, using SQLite instead
+- adding critical analysis with deduplication and hallucination detection steps using specific models
+- bug fixes
+- processing function improvements and split
+
+I will probably upload the changes within 2 days.
 
 ---
 
