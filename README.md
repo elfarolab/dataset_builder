@@ -1,4 +1,4 @@
-## 17 Aug 2026: STILL TESTING after big refactoring of code is underway.
+## 17 Aug 2026: STILL TESTING after big refactoring of code.
 
 I am doing big changes, stay tuned:
 
