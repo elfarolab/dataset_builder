@@ -1,8 +1,10 @@
-## 17 Aug 2026: STILL TESTING after big refactoring of code.
+## 18 Aug 2026: 
+
+I need to drop Docling because it is not very oriented to client/server architecture, high number of dependencies and the required incompatible packets. 
 
 I am doing big changes, stay tuned:
 
-- adding docling
+- adding advanced parsing library
 - dropping saving the state into a JSONL file, using SQLite instead
 - adding critical analysis with deduplication and hallucination detection steps using specific models
 - bug fixes
