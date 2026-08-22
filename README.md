@@ -1,10 +1,11 @@
-## 18 Aug 2026: 
+## 22 Aug 2026: 
 
-I need to drop Docling because it is not very oriented to client/server architecture, high number of dependencies and the required incompatible packets. 
+We drop Docling in favour of PyMuPDF4LLM, it has cleaner architecture and install.
+I need a couple of days to put all the pieces together.
 
-I am doing big changes, stay tuned:
+Big changes:
 
-- adding advanced parsing library
+- adding advanced parsing library for multicolumns papers, tables, smart OCR.
 - dropping saving the state into a JSONL file, using SQLite instead
 - adding critical analysis with deduplication and hallucination detection steps using specific models
 - bug fixes
